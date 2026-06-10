@@ -4,7 +4,7 @@ import type { ResponseConfig } from '../config/types';
 
 const REQUIRED_FIELDS = new Set(['id', 'title']);
 const PROJECT_FIELDS: Record<Verbosity, string[]> = {
-  [Verbosity.MINIMAL]: ['id', 'title', 'children'],
+  [Verbosity.MINIMAL]: ['id', 'title', 'parent_project_id', 'children'],
   [Verbosity.STANDARD]: ['id', 'title', 'description', 'parent_project_id', 'is_archived', 'children'],
   [Verbosity.DETAILED]: [
     'id', 'title', 'description', 'parent_project_id', 'is_archived',
@@ -77,5 +77,7 @@ function selectEntityFields(
 }
 
 function isProject(entity: Record<string, unknown>): boolean {
-  return 'parent_project_id' in entity || 'is_archived' in entity;
+  return 'parent_project_id' in entity ||
+    'is_archived' in entity ||
+    Array.isArray(entity.children);
 }
