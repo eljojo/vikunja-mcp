@@ -4,11 +4,11 @@ import type { ResponseConfig } from '../config/types';
 
 const REQUIRED_FIELDS = new Set(['id', 'title']);
 const PROJECT_FIELDS: Record<Verbosity, string[]> = {
-  [Verbosity.MINIMAL]: ['id', 'title'],
-  [Verbosity.STANDARD]: ['id', 'title', 'description', 'parent_project_id', 'is_archived'],
+  [Verbosity.MINIMAL]: ['id', 'title', 'children'],
+  [Verbosity.STANDARD]: ['id', 'title', 'description', 'parent_project_id', 'is_archived', 'children'],
   [Verbosity.DETAILED]: [
     'id', 'title', 'description', 'parent_project_id', 'is_archived',
-    'created', 'updated', 'owner', 'position',
+    'created', 'updated', 'owner', 'position', 'children',
   ],
   [Verbosity.COMPLETE]: [],
 };
