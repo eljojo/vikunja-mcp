@@ -5,9 +5,12 @@ export {
   expressionToString,
   groupToString,
   parseFilterString,
+  parseSimpleFilter,
+  applyClientSideFilter,
   validateCondition,
   validateFilterExpression,
 } from './parser';
+export type { SimpleFilter } from './parser';
 
 export {
   applyFilter,
