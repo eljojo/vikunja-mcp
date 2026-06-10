@@ -90,4 +90,25 @@ describe('response verbosity configuration', () => {
       count: 1,
     });
   });
+
+  it('preserves project tree structure at compact verbosity levels', () => {
+    const tree = {
+      id: 1,
+      title: 'Root',
+      children: [
+        {
+          id: 2,
+          title: 'Child',
+          parent_project_id: 1,
+          children: [],
+        },
+      ],
+    };
+
+    expect(applyResponseVerbosity(tree, {
+      verbosity: Verbosity.MINIMAL,
+      includeFields: [],
+      excludeFields: [],
+    })).toEqual(tree);
+  });
 });
