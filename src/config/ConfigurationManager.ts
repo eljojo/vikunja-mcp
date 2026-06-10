@@ -10,6 +10,7 @@ import type {
   AuthConfig,
   LoggingConfig,
   RateLimitConfig,
+  ResponseConfig,
 } from './types';
 import {
   Environment,
@@ -17,6 +18,7 @@ import {
   ApplicationConfigSchema,
 } from './types';
 import { logger } from '../utils/logger';
+import { Verbosity } from '../transforms/base';
 
 
 /**
@@ -163,6 +165,10 @@ export class ConfigurationManager {
     return config.rateLimiting;
   }
 
+  public getResponseConfig(): ResponseConfig {
+    return this.loadConfiguration().response;
+  }
+
   /**
    * Check if a feature is enabled
    * AORP architecture has specific features always enabled or disabled
@@ -217,8 +223,31 @@ export class ConfigurationManager {
    * Load configuration from environment variables
    */
   private loadFromEnvironmentVariables(): Partial<ApplicationConfig> {
-    // AORP requires direct configuration - no backward compatibility
-    return {};
+    const response: ResponseConfig = {
+      verbosity: Verbosity.STANDARD,
+      includeFields: [],
+      excludeFields: [],
+    };
+    let hasResponseConfig = false;
+
+    if (process.env.VIKUNJA_RESPONSE_VERBOSITY) {
+      response.verbosity = process.env.VIKUNJA_RESPONSE_VERBOSITY.toLowerCase() as Verbosity;
+      hasResponseConfig = true;
+    }
+    if (process.env.VIKUNJA_RESPONSE_INCLUDE_FIELDS) {
+      response.includeFields = this.parseFieldList(process.env.VIKUNJA_RESPONSE_INCLUDE_FIELDS);
+      hasResponseConfig = true;
+    }
+    if (process.env.VIKUNJA_RESPONSE_EXCLUDE_FIELDS) {
+      response.excludeFields = this.parseFieldList(process.env.VIKUNJA_RESPONSE_EXCLUDE_FIELDS);
+      hasResponseConfig = true;
+    }
+
+    return hasResponseConfig ? { response } : {};
+  }
+
+  private parseFieldList(value: string): string[] {
+    return [...new Set(value.split(',').map((field) => field.trim()).filter(Boolean))];
   }
 
   
@@ -295,6 +324,7 @@ export class ConfigurationManager {
         mcpMode: this.config.auth.mcpMode,
       },
       logging: this.config.logging,
+      response: this.config.response,
       rateLimiting: {
         // AORP requires rate limiting to always be enabled
         profiles: {

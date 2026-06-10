@@ -8,6 +8,7 @@ import type { ResponseMetadata } from '../../types/responses';
 import type { ResponseData } from '../../utils/simple-response';
 import type { AorpFactoryResult, AorpVerbosityLevel } from '../../types';
 import type { Project } from 'node-vikunja';
+import { applyResponseVerbosity, resolveResponseConfig } from '../../transforms/response-verbosity';
 
 /**
  * Project tree node interface
@@ -29,11 +30,11 @@ export function createProjectResponse(
   _useOptimizedFormat?: boolean,
   _useAorp?: boolean
 ): AorpFactoryResult {
-  // Default to standard verbosity if not specified
-  const selectedVerbosity = 'standard';
+  const responseConfig = resolveResponseConfig(_verbosity);
+  const selectedVerbosity = responseConfig.verbosity;
 
   // Cast data to ResponseData for type compatibility
-  const responseData = _data as ResponseData;
+  const responseData = applyResponseVerbosity(_data, responseConfig) as ResponseData;
 
   // Use simple response format
   const simpleAorpResult = createAorpResponse(operation, message, responseData, {

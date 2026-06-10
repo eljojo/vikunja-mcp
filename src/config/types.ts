@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod';
+import { Verbosity } from '../transforms/base';
 
 // Environment type for configuration profiles
 export enum Environment {
@@ -83,6 +84,14 @@ export const RateLimitConfigSchema = z.object({
 
 export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 
+export const ResponseConfigSchema = z.object({
+  verbosity: z.nativeEnum(Verbosity).default(Verbosity.STANDARD),
+  includeFields: z.array(z.string().min(1)).default([]),
+  excludeFields: z.array(z.string().min(1)).default([]),
+});
+
+export type ResponseConfig = z.infer<typeof ResponseConfigSchema>;
+
 // AORP is always enabled - no feature flags needed
 export type FeatureFlagsConfig = Record<string, never>;
 
@@ -92,6 +101,7 @@ export const ApplicationConfigSchema = z.object({
   auth: AuthConfigSchema.default({}),
   logging: LoggingConfigSchema.default({}),
   rateLimiting: RateLimitConfigSchema.default({}),
+  response: ResponseConfigSchema.default({}),
   // AORP is always enabled - no feature flags needed
 });
 

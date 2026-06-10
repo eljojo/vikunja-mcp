@@ -8,6 +8,7 @@ import { createAorpResponse, createTaskAorpResponse, createAorpErrorResponse } f
 import type { AorpFactoryResult } from '../../../types';
 import type { Task } from '../../../types/vikunja';
 import type { ResponseData } from '../../../utils/simple-response';
+import { applyResponseVerbosity, resolveResponseConfig } from '../../../transforms/response-verbosity';
 
 /**
  * AORP configuration generator for different operations
@@ -83,17 +84,19 @@ export function createTaskResponse(
   _metadata: TaskResponseMetadata = {
     timestamp: new Date().toISOString()
   },
-  _verbosity?: string, // Parameter kept for backward compatibility but ignored
+  _verbosity?: string,
   _useOptimizedFormat?: boolean, // Parameter kept for backward compatibility but ignored
   _useAorp?: boolean, // Parameter kept for backward compatibility but ignored
   _aorpConfig?: AorpBuilderConfig,
   _sessionId?: string
 ): AorpFactoryResult {
-  // Use standard AORP configuration - no more verbosity options
-  generateAorpConfig(operation, _data, 'standard');
+  const responseConfig = resolveResponseConfig(_verbosity);
+  const selectedVerbosity = responseConfig.verbosity;
+  const data = applyResponseVerbosity(_data, responseConfig);
+  generateAorpConfig(operation, data, selectedVerbosity);
 
   // For task operations, use specialized task AORP response
-  const taskData = _data.task || _data.tasks;
+  const taskData = data.task || data.tasks;
   if (taskData) {
     // Convert Task | Task[] to proper ResponseData format
     const formattedTaskData = Array.isArray(taskData) ? { tasks: taskData as ResponseData[] } : taskData as ResponseData;
@@ -119,7 +122,7 @@ export function createTaskResponse(
           success: true,
           dataSize: JSON.stringify(taskData).length,
           processingTime: 0,
-          verbosity: 'standard',
+          verbosity: selectedVerbosity,
           verbosityLevel: 'simple' as AorpVerbosityLevel,
           complexityFactors: {
             dataSize: JSON.stringify(taskData).length >= 1024,
@@ -142,14 +145,14 @@ export function createTaskResponse(
   const responseData: ResponseData = {};
 
   // Copy task data if present
-  if (_data.task) {
-    responseData.tasks = [_data.task as Task]; // Convert from node-vikunja Task to our Task interface
-  } else if (_data.tasks) {
-    responseData.tasks = _data.tasks as Task[]; // Convert from node-vikunja Task[] to our Task[] interface
+  if (data.task) {
+    responseData.tasks = [data.task as Task]; // Convert from node-vikunja Task to our Task interface
+  } else if (data.tasks) {
+    responseData.tasks = data.tasks as Task[]; // Convert from node-vikunja Task[] to our Task[] interface
   }
 
   // Copy other properties
-  Object.entries(_data).forEach(([key, value]) => {
+  Object.entries(data).forEach(([key, value]) => {
     if (key !== 'task' && key !== 'tasks') {
       responseData[key] = value;
     }
@@ -175,12 +178,12 @@ export function createTaskResponse(
       context: {
         operation,
         success: true,
-        dataSize: JSON.stringify(_data).length,
+        dataSize: JSON.stringify(data).length,
         processingTime: 0,
-        verbosity: 'standard',
+        verbosity: selectedVerbosity,
         verbosityLevel: 'simple' as AorpVerbosityLevel,
         complexityFactors: {
-          dataSize: JSON.stringify(_data).length >= 1024,
+          dataSize: JSON.stringify(data).length >= 1024,
           hasWarnings: false,
           hasErrors: false,
           isBulkOperation: false,

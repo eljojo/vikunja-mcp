@@ -1310,6 +1310,19 @@ FILTER_MAX_LENGTH=1000          # Maximum filter string length (default: 1000)
 FILTER_MAX_VALUE_LENGTH=200     # Maximum individual value length (default: 200)
 ```
 
+#### Response Verbosity
+```bash
+# minimal | standard | detailed | complete (default: standard)
+VIKUNJA_RESPONSE_VERBOSITY=standard
+
+# Optional comma-separated field overrides
+VIKUNJA_RESPONSE_INCLUDE_FIELDS=reminders,repeat_after
+VIKUNJA_RESPONSE_EXCLUDE_FIELDS=hex_color,position
+```
+
+Tool-level `verbosity` parameters override the global level. Field overrides
+apply afterward; required identity fields (`id` and `title`) are always kept.
+
 For detailed rate limiting configuration, see [`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md).
 
 ## Roadmap
