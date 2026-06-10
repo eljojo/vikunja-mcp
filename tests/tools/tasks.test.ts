@@ -448,6 +448,33 @@ describe('Tasks Tool', () => {
       expect(mockClient.tasks.getTask).toHaveBeenCalledTimes(2);
     });
 
+    it('should retry relationship assignment while a new task is unavailable', async () => {
+      mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
+      mockClient.tasks.updateTaskLabels
+        .mockRejectedValueOnce(new Error('This task does not exist'))
+        .mockResolvedValue(undefined);
+      mockClient.tasks.bulkAssignUsersToTask
+        .mockRejectedValueOnce(new Error('This task does not exist'))
+        .mockResolvedValue(undefined);
+      mockClient.tasks.getTask.mockResolvedValue({
+        ...mockTask,
+        id: 1,
+        labels: [{ id: 4 }, { id: 5 }],
+        assignees: [{ id: 7 }],
+      });
+
+      await callTool('create', {
+        title: 'Task with relationships',
+        projectId: 1,
+        labels: [4, 5],
+        assignees: [7],
+      });
+
+      expect(mockClient.tasks.updateTaskLabels).toHaveBeenCalledTimes(2);
+      expect(mockClient.tasks.bulkAssignUsersToTask).toHaveBeenCalledTimes(2);
+      expect(mockClient.tasks.deleteTask).not.toHaveBeenCalled();
+    });
+
     it('should reject and roll back when requested assignees are not applied', async () => {
       mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
       mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue(undefined);
