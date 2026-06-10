@@ -68,6 +68,9 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
     if (args.assignees && args.assignees.length > 0) {
       args.assignees.forEach((id) => validateId(id, 'assignee ID'));
     }
+    if (args.labels && args.labels.length > 0) {
+      args.labels.forEach((id) => validateId(id, 'label ID'));
+    }
 
     const client = await getClientFromContext();
 
@@ -102,6 +105,7 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
       assigneesAdded: false
     };
 
+    let completeTask = createdTask;
     try {
       // Add labels if provided
       if (args.labels && args.labels.length > 0 && createdTask.id) {
@@ -115,14 +119,14 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
         creationState.assigneesAdded = true;
       }
 
+      // Fetch and verify the complete relationship state before reporting success.
+      completeTask = createdTask.id ? await client.tasks.getTask(createdTask.id) : createdTask;
+      verifyRequestedRelationships(completeTask, args);
     } catch (updateError) {
       // Attempt to clean up the partially created task
       await rollbackTaskCreation(client, creationState, updateError);
       // The rollback function will re-throw the original error with context
     }
-
-    // Fetch the complete task with labels and assignees
-    const completeTask = createdTask.id ? await client.tasks.getTask(createdTask.id) : createdTask;
 
     const response = createTaskResponse(
       'create-task',
@@ -171,6 +175,34 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
 
     // Use standardized error transformation for all other errors
     throw transformApiError(error, 'Failed to create task');
+  }
+}
+
+function verifyRequestedRelationships(task: Task, args: CreateTaskArgs): void {
+  if (args.labels !== undefined) {
+    verifyIds(task.id, 'labels', args.labels, task.labels?.map((label) => label.id) ?? []);
+  }
+  if (args.assignees !== undefined) {
+    verifyIds(task.id, 'assignees', args.assignees, task.assignees?.map((assignee) => assignee.id) ?? []);
+  }
+}
+
+function verifyIds(
+  taskId: number | undefined,
+  relationship: 'labels' | 'assignees',
+  requestedIds: number[],
+  actualIds: Array<number | undefined>,
+): void {
+  const expected = [...requestedIds].sort((a, b) => a - b);
+  const actual = actualIds
+    .filter((id): id is number => id !== undefined)
+    .sort((a, b) => a - b);
+
+  if (expected.length !== actual.length || expected.some((id, index) => id !== actual[index])) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId ?? 'unknown'} was created but requested ${relationship} were not applied`,
+    );
   }
 }
 

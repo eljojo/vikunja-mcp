@@ -380,7 +380,12 @@ describe('Tasks Tool', () => {
       };
 
       mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
-      mockClient.tasks.getTask.mockResolvedValue({ ...mockTask, ...fullTask });
+      mockClient.tasks.getTask.mockResolvedValue({
+        ...mockTask,
+        title: 'Full Task',
+        labels: [{ id: 1 }, { id: 2 }],
+        assignees: [{ id: 1 }, { id: 2 }],
+      });
       mockClient.tasks.updateTaskLabels.mockResolvedValue(undefined);
       mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue(undefined);
 
@@ -393,6 +398,44 @@ describe('Tasks Tool', () => {
           project_id: 1,
         }),
       );
+    });
+
+    it('should reject and roll back when requested labels are not applied', async () => {
+      mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
+      mockClient.tasks.updateTaskLabels.mockResolvedValue(undefined);
+      mockClient.tasks.getTask.mockResolvedValue({
+        ...mockTask,
+        id: 1,
+        labels: [],
+      });
+      mockClient.tasks.deleteTask.mockResolvedValue(undefined);
+
+      await expect(callTool('create', {
+        title: 'Task with labels',
+        projectId: 1,
+        labels: [4, 5],
+      })).rejects.toThrow('requested labels were not applied');
+
+      expect(mockClient.tasks.deleteTask).toHaveBeenCalledWith(1);
+    });
+
+    it('should reject and roll back when requested assignees are not applied', async () => {
+      mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
+      mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue(undefined);
+      mockClient.tasks.getTask.mockResolvedValue({
+        ...mockTask,
+        id: 1,
+        assignees: [],
+      });
+      mockClient.tasks.deleteTask.mockResolvedValue(undefined);
+
+      await expect(callTool('create', {
+        title: 'Assigned task',
+        projectId: 1,
+        assignees: [7],
+      })).rejects.toThrow('requested assignees were not applied');
+
+      expect(mockClient.tasks.deleteTask).toHaveBeenCalledWith(1);
     });
 
     it('should validate required fields', async () => {
