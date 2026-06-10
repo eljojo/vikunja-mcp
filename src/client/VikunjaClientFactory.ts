@@ -6,6 +6,7 @@
 import type { VikunjaClient } from 'node-vikunja';
 import type { AuthManager } from '../auth/AuthManager';
 import type { VikunjaClientConstructor } from '../types/node-vikunja-extended';
+import { applyTaskServiceCompatibility } from './applyTaskServiceCompatibility';
 
 /**
  * Factory for creating and managing Vikunja client instances
@@ -38,6 +39,8 @@ export class VikunjaClientFactory {
       }
       
       this.clientInstance = new this.VikunjaClientClass(session.apiUrl, session.apiToken);
+      applyTaskServiceCompatibility(this.clientInstance.tasks);
+
       this.currentApiUrl = session.apiUrl;
       this.currentApiToken = session.apiToken;
     }

@@ -357,6 +357,7 @@ describe('VikunjaClientFactory', () => {
 
       const client = customFactory.getClient();
       expect(client).toBe(customClient);
+      expect(client.tasks).toBe(customClient.tasks);
       expect(customConstructor).toHaveBeenCalledWith(
         'https://custom.vikunja.com',
         'custom-token'
