@@ -1,9 +1,16 @@
-import type { GetTasksParams, Task, TaskService } from 'node-vikunja';
+import type {
+  BulkAssignees,
+  GetTasksParams,
+  LabelTaskBulk,
+  Task,
+  TaskAssignment,
+  TaskService,
+} from 'node-vikunja';
 
 type TaskServiceWithRequest = TaskService & {
   request<T>(
     endpoint: string,
-    method: 'GET',
+    method: 'GET' | 'POST',
     body?: unknown,
     options?: { params?: GetTasksParams }
   ): Promise<T>;
@@ -32,4 +39,22 @@ export function applyTaskServiceCompatibility(service: unknown): void {
     const options = params === undefined ? undefined : { params };
     return service.request<Task[]>('/tasks', 'GET', undefined, options);
   };
+
+  service.updateTaskLabels = (
+    taskId: number,
+    labels: LabelTaskBulk,
+  ): Promise<LabelTaskBulk> => service.request<LabelTaskBulk>(
+    `/tasks/${taskId}/labels/bulk`,
+    'POST',
+    { labels: labels.label_ids.map((id) => ({ id })) },
+  );
+
+  service.bulkAssignUsersToTask = (
+    taskId: number,
+    assignees: BulkAssignees,
+  ): Promise<TaskAssignment> => service.request<TaskAssignment>(
+    `/tasks/${taskId}/assignees/bulk`,
+    'POST',
+    { assignees: assignees.user_ids.map((id) => ({ id })) },
+  );
 }

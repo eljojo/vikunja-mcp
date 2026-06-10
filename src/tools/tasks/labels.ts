@@ -37,34 +37,38 @@ export async function applyLabels(args: {
     const taskId = args.id;
     const labelIds = args.labels;
 
-    // Add labels to the task with retry logic
-    for (const labelId of labelIds) {
-      try {
-        await withRetry(
-          () =>
-            client.tasks.addLabelToTask(taskId, {
-              task_id: taskId,
-              label_id: labelId,
-            }),
-          {
-            ...RETRY_CONFIG.AUTH_ERRORS,
-            shouldRetry: (error: unknown) => isAuthenticationError(error),
-          },
+    const currentTask = await client.tasks.getTask(taskId);
+    const currentLabelIds = currentTask.labels
+      ?.map((label) => label.id)
+      .filter((id): id is number => id !== undefined) ?? [];
+    const finalLabelIds = [...new Set([...currentLabelIds, ...labelIds])];
+
+    try {
+      await withRetry(
+        () => client.tasks.updateTaskLabels(taskId, { label_ids: finalLabelIds }),
+        {
+          ...RETRY_CONFIG.AUTH_ERRORS,
+          shouldRetry: (error: unknown) => isAuthenticationError(error),
+        },
+      );
+    } catch (labelError) {
+      if (isAuthenticationError(labelError)) {
+        throw new MCPError(
+          ErrorCode.API_ERROR,
+          `Failed to apply label to task (Retried ${RETRY_CONFIG.AUTH_ERRORS.maxRetries} times)`,
         );
-      } catch (labelError) {
-        // Check if it's an auth error after retries
-        if (isAuthenticationError(labelError)) {
-          throw new MCPError(
-            ErrorCode.API_ERROR,
-            `Failed to apply label to task (Retried ${RETRY_CONFIG.AUTH_ERRORS.maxRetries} times)`,
-          );
-        }
-        throw labelError;
       }
+      throw relationshipOperationError('labels', taskId, labelError);
     }
 
     // Fetch the updated task to show current labels
     const task = await client.tasks.getTask(args.id);
+    verifyRelationshipIds(
+      'labels',
+      taskId,
+      finalLabelIds,
+      task.labels?.map((label) => label.id) ?? [],
+    );
 
     const response = createSimpleResponse(
       'apply-label',
@@ -87,6 +91,37 @@ export async function applyLabels(args: {
       `Failed to apply labels to task: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+function verifyRelationshipIds(
+  relationship: 'labels',
+  taskId: number,
+  expectedIds: number[],
+  actualIds: Array<number | undefined>,
+): void {
+  const actual = new Set(actualIds.filter((id): id is number => id !== undefined));
+  const missing = expectedIds.filter((id) => !actual.has(id));
+  if (missing.length > 0) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId} is missing requested ${relationship}: ${missing.join(', ')}`,
+    );
+  }
+}
+
+function relationshipOperationError(
+  relationship: 'labels',
+  taskId: number,
+  error: unknown,
+): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/task does not exist|task not found/i.test(message)) {
+    return new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId} is readable but ${relationship} could not be changed. Check that the Vikunja API token allows task ${relationship} routes. Original error: ${message}`,
+    );
+  }
+  return error instanceof Error ? error : new Error(message);
 }
 
 /**

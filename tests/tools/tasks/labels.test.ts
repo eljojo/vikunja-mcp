@@ -15,7 +15,7 @@ const mockGetClientFromContext = jest.mocked(getClientFromContext);
 describe('Label operations', () => {
   const mockClient = {
     tasks: {
-      addLabelToTask: jest.fn(),
+      updateTaskLabels: jest.fn(),
       removeLabelFromTask: jest.fn(),
       getTask: jest.fn(),
     },
@@ -35,16 +35,17 @@ describe('Label operations', () => {
         labels: [{ id: 1, title: 'research', hex_color: '3498db' }],
       };
 
-      mockClient.tasks.addLabelToTask.mockResolvedValue({});
-      mockClient.tasks.getTask.mockResolvedValue(mockTask);
+      mockClient.tasks.updateTaskLabels.mockResolvedValue({});
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({ id: 1, title: 'Test Task', labels: [] })
+        .mockResolvedValueOnce(mockTask);
 
       const result = await applyLabels({ id: 1, labels: [1] });
 
-      expect(mockClient.tasks.addLabelToTask).toHaveBeenCalledWith(1, {
-        task_id: 1,
-        label_id: 1,
+      expect(mockClient.tasks.updateTaskLabels).toHaveBeenCalledWith(1, {
+        label_ids: [1],
       });
-      expect(mockClient.tasks.getTask).toHaveBeenCalledWith(1);
+      expect(mockClient.tasks.getTask).toHaveBeenCalledTimes(2);
       expect(result.content[0].text).toContain('Label applied to task successfully');
     });
 
@@ -58,19 +59,37 @@ describe('Label operations', () => {
 
     it('should handle multiple labels', async () => {
       const mockTask = { id: 1, title: 'Test Task', labels: [] };
-      mockClient.tasks.addLabelToTask.mockResolvedValue({});
-      mockClient.tasks.getTask.mockResolvedValue(mockTask);
+      mockClient.tasks.updateTaskLabels.mockResolvedValue({});
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({ id: 1, title: 'Test Task', labels: [{ id: 3 }] })
+        .mockResolvedValueOnce({
+          id: 1,
+          title: 'Test Task',
+          labels: [{ id: 3 }, { id: 1 }, { id: 2 }],
+        });
 
       const result = await applyLabels({ id: 1, labels: [1, 2] });
 
-      expect(mockClient.tasks.addLabelToTask).toHaveBeenCalledTimes(2);
+      expect(mockClient.tasks.updateTaskLabels).toHaveBeenCalledWith(1, {
+        label_ids: [3, 1, 2],
+      });
       expect(result.content[0].text).toContain('Labels applied to task successfully');
     });
 
     it('should handle API errors gracefully', async () => {
-      mockClient.tasks.addLabelToTask.mockRejectedValue(new Error('API Error'));
+      mockClient.tasks.getTask.mockResolvedValue({ id: 1, title: 'Test Task', labels: [] });
+      mockClient.tasks.updateTaskLabels.mockRejectedValue(new Error('API Error'));
 
       await expect(applyLabels({ id: 1, labels: [1] })).rejects.toThrow(MCPError);
+    });
+
+    it('explains API token scope errors for readable tasks', async () => {
+      mockClient.tasks.getTask.mockResolvedValue({ id: 21, title: 'Task', labels: [] });
+      mockClient.tasks.updateTaskLabels.mockRejectedValue(new Error('This task does not exist'));
+
+      await expect(applyLabels({ id: 21, labels: [2] })).rejects.toThrow(
+        'Check that the Vikunja API token allows task labels routes',
+      );
     });
   });
 

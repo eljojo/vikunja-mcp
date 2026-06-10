@@ -40,7 +40,10 @@ describe('Assignee operations', () => {
       };
       
       mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue({});
-      mockClient.tasks.getTask.mockResolvedValue(mockTask);
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({ id: 123, title: 'Test Task', assignees: [] })
+        .mockResolvedValueOnce(mockTask)
+        .mockResolvedValueOnce(mockTask);
 
       const result = await assignUsers({
         id: 123,
@@ -50,7 +53,7 @@ describe('Assignee operations', () => {
       expect(mockClient.tasks.bulkAssignUsersToTask).toHaveBeenCalledWith(123, {
         user_ids: [1, 2],
       });
-      expect(mockClient.tasks.getTask).toHaveBeenCalledWith(123);
+      expect(mockClient.tasks.getTask).toHaveBeenCalledTimes(3);
 
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
@@ -97,6 +100,7 @@ describe('Assignee operations', () => {
 
     it('should handle authentication errors with retry', async () => {
       const authError = new Error('Authentication failed');
+      mockClient.tasks.getTask.mockResolvedValue({ id: 123, title: 'Task', assignees: [] });
       (isAuthenticationError as jest.Mock).mockReturnValue(true);
       (withRetry as jest.Mock).mockRejectedValue(authError);
 
@@ -107,6 +111,7 @@ describe('Assignee operations', () => {
 
     it('should handle non-authentication API errors', async () => {
       const apiError = new Error('API Error');
+      mockClient.tasks.getTask.mockResolvedValue({ id: 123, title: 'Task', assignees: [] });
       (withRetry as jest.Mock).mockRejectedValue(apiError);
 
       await expect(assignUsers({ id: 123, assignees: [1, 2] })).rejects.toThrow(
@@ -116,6 +121,7 @@ describe('Assignee operations', () => {
 
     it('should handle unknown error types', async () => {
       const unknownError = { message: 'Unknown error' };
+      mockClient.tasks.getTask.mockResolvedValue({ id: 123, title: 'Task', assignees: [] });
       (withRetry as jest.Mock).mockRejectedValue(unknownError);
 
       await expect(assignUsers({ id: 123, assignees: [1, 2] })).rejects.toThrow(
@@ -129,6 +135,29 @@ describe('Assignee operations', () => {
 
       await expect(assignUsers({ id: 123, assignees: [1, 2] })).rejects.toThrow(
         'Failed to assign users to task: Validation failed'
+      );
+    });
+
+    it('preserves existing assignees when adding users', async () => {
+      mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue({});
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [{ id: 9 }] })
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [{ id: 9 }, { id: 1 }] })
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [{ id: 9 }, { id: 1 }] });
+
+      await assignUsers({ id: 123, assignees: [1] });
+
+      expect(mockClient.tasks.bulkAssignUsersToTask).toHaveBeenCalledWith(123, {
+        user_ids: [9, 1],
+      });
+    });
+
+    it('explains API token scope errors for readable tasks', async () => {
+      mockClient.tasks.getTask.mockResolvedValue({ id: 21, title: 'Task', assignees: [] });
+      (withRetry as jest.Mock).mockRejectedValue(new Error('This task does not exist'));
+
+      await expect(assignUsers({ id: 21, assignees: [1] })).rejects.toThrow(
+        'Check that the Vikunja API token allows task assignee routes',
       );
     });
   });
