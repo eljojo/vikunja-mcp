@@ -130,3 +130,40 @@ export function applyFieldUpdate(task: Task, field: string | undefined, value: u
   }
   return task;
 }
+
+/**
+ * Builds a task payload containing only fields accepted by Vikunja's update
+ * model. Relationship and read-only response fields are intentionally excluded.
+ */
+export function buildWritableTaskSnapshot(task: Task): Task {
+  const snapshot: Task = {
+    project_id: task.project_id,
+    title: task.title,
+  };
+
+  const writableFields: Array<keyof Task> = [
+    'description',
+    'done',
+    'done_at',
+    'due_date',
+    'start_date',
+    'end_date',
+    'repeat_after',
+    'repeat_mode',
+    'priority',
+    'hex_color',
+    'percent_done',
+    'kanban_position',
+    'bucket_id',
+    'position',
+  ];
+
+  for (const field of writableFields) {
+    const value = task[field];
+    if (value !== undefined) {
+      (snapshot as Record<string, unknown>)[field] = value;
+    }
+  }
+
+  return snapshot;
+}
