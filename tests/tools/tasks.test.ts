@@ -419,6 +419,35 @@ describe('Tasks Tool', () => {
       expect(mockClient.tasks.deleteTask).toHaveBeenCalledWith(1);
     });
 
+    it('should wait for requested relationships before rolling back creation', async () => {
+      mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
+      mockClient.tasks.updateTaskLabels.mockResolvedValue(undefined);
+      mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue(undefined);
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({
+          ...mockTask,
+          id: 1,
+          labels: [],
+          assignees: [],
+        })
+        .mockResolvedValueOnce({
+          ...mockTask,
+          id: 1,
+          labels: [{ id: 4 }, { id: 5 }],
+          assignees: [{ id: 7 }],
+        });
+
+      await callTool('create', {
+        title: 'Task with relationships',
+        projectId: 1,
+        labels: [4, 5],
+        assignees: [7],
+      });
+
+      expect(mockClient.tasks.deleteTask).not.toHaveBeenCalled();
+      expect(mockClient.tasks.getTask).toHaveBeenCalledTimes(2);
+    });
+
     it('should reject and roll back when requested assignees are not applied', async () => {
       mockClient.tasks.createTask.mockResolvedValue({ ...mockTask, id: 1 });
       mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue(undefined);

@@ -9,6 +9,7 @@ import { isAuthenticationError } from '../../utils/auth-error-handler';
 import { withRetry, RETRY_CONFIG } from '../../utils/retry';
 import { validateId } from './validation';
 import { createSimpleResponse, formatAorpAsMarkdown } from '../../utils/response-factory';
+import { getTaskWithRelationships } from './relationship-verification';
 
 /**
  * Add labels to a task
@@ -62,7 +63,9 @@ export async function applyLabels(args: {
     }
 
     // Fetch the updated task to show current labels
-    const task = await client.tasks.getTask(args.id);
+    const task = await getTaskWithRelationships(client, taskId, {
+      labels: finalLabelIds,
+    });
     verifyRelationshipIds(
       'labels',
       taskId,

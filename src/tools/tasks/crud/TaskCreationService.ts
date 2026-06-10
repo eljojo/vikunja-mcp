@@ -15,6 +15,7 @@ import { AUTH_ERROR_MESSAGES } from '../constants';
 import { validateDateString, validateId, convertRepeatConfiguration } from '../validation';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
+import { getTaskWithRelationships } from '../relationship-verification';
 
 export interface CreateTaskArgs {
   projectId?: number;
@@ -120,7 +121,12 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
       }
 
       // Fetch and verify the complete relationship state before reporting success.
-      completeTask = createdTask.id ? await client.tasks.getTask(createdTask.id) : createdTask;
+      completeTask = createdTask.id
+        ? await getTaskWithRelationships(client, createdTask.id, {
+            ...(args.labels !== undefined && { labels: args.labels }),
+            ...(args.assignees !== undefined && { assignees: args.assignees }),
+          })
+        : createdTask;
       verifyRequestedRelationships(completeTask, args);
     } catch (updateError) {
       // Attempt to clean up the partially created task

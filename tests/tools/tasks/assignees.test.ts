@@ -152,6 +152,20 @@ describe('Assignee operations', () => {
       });
     });
 
+    it('waits for an assignment to become visible', async () => {
+      mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue({});
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [] })
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [] })
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [{ id: 1 }] })
+        .mockResolvedValueOnce({ id: 123, title: 'Task', assignees: [{ id: 1 }] });
+
+      await assignUsers({ id: 123, assignees: [1] });
+
+      expect(mockClient.tasks.bulkAssignUsersToTask).toHaveBeenCalledTimes(1);
+      expect(mockClient.tasks.getTask).toHaveBeenCalledTimes(4);
+    });
+
     it('explains API token scope errors for readable tasks', async () => {
       mockClient.tasks.getTask.mockResolvedValue({ id: 21, title: 'Task', assignees: [] });
       (withRetry as jest.Mock).mockRejectedValue(new Error('This task does not exist'));

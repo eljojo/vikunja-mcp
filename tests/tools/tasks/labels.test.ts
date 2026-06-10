@@ -76,6 +76,19 @@ describe('Label operations', () => {
       expect(result.content[0].text).toContain('Labels applied to task successfully');
     });
 
+    it('waits for labels to become visible', async () => {
+      mockClient.tasks.updateTaskLabels.mockResolvedValue({});
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce({ id: 1, title: 'Task', labels: [] })
+        .mockResolvedValueOnce({ id: 1, title: 'Task', labels: [] })
+        .mockResolvedValueOnce({ id: 1, title: 'Task', labels: [{ id: 2 }] });
+
+      await applyLabels({ id: 1, labels: [2] });
+
+      expect(mockClient.tasks.updateTaskLabels).toHaveBeenCalledTimes(1);
+      expect(mockClient.tasks.getTask).toHaveBeenCalledTimes(3);
+    });
+
     it('should handle API errors gracefully', async () => {
       mockClient.tasks.getTask.mockResolvedValue({ id: 1, title: 'Test Task', labels: [] });
       mockClient.tasks.updateTaskLabels.mockRejectedValue(new Error('API Error'));

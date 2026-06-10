@@ -9,6 +9,7 @@ import { getClientFromContext } from '../../../client';
 import { isAuthenticationError } from '../../../utils/auth-error-handler';
 import { withRetry, RETRY_CONFIG } from '../../../utils/retry';
 import { AUTH_ERROR_MESSAGES } from '../constants';
+import { getTaskWithRelationships } from '../relationship-verification';
 
 /**
  * Service for managing task assignee operations
@@ -51,7 +52,9 @@ export const AssigneeOperationsService = {
       throw assigneeError;
     }
 
-    const updatedTask = await client.tasks.getTask(taskId);
+    const updatedTask = await getTaskWithRelationships(client, taskId, {
+      assignees: finalAssigneeIds,
+    });
     const actualIds = new Set(updatedTask.assignees?.map((assignee) => assignee.id) ?? []);
     const missingIds = finalAssigneeIds.filter((id) => !actualIds.has(id));
     if (missingIds.length > 0) {
