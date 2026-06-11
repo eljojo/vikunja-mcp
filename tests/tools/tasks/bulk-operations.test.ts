@@ -114,6 +114,14 @@ describe('Bulk operations', () => {
         );
       });
 
+      it('should validate bucket_id', async () => {
+        await expect(bulkUpdateTasks({
+          taskIds: [1, 2],
+          field: 'bucket_id',
+          value: -1,
+        })).rejects.toThrow('bucket_id must be a positive integer');
+      });
+
       it('should validate assignees array', async () => {
         await expect(bulkUpdateTasks({ taskIds: [1, 2], field: 'assignees', value: 'not-array' })).rejects.toThrow(
           'assignees must be an array of numbers'
@@ -182,6 +190,19 @@ describe('Bulk operations', () => {
         expect(mockClient.tasks.updateTask).toHaveBeenCalledWith(1, expect.objectContaining({ priority: 3 }));
         expect(mockClient.tasks.updateTask).toHaveBeenCalledWith(2, expect.objectContaining({ priority: 3 }));
       });
+
+      it('should convert string numbers to numbers for bucket_id', async () => {
+        mockSafeScalarUpdates([
+          { id: 1, project_id: 13, bucket_id: 38, title: 'Task 1' },
+        ]);
+
+        await bulkUpdateTasks({ taskIds: [1], field: 'bucket_id', value: '39' });
+
+        expect(mockClient.tasks.updateTask).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({ bucket_id: 39 }),
+        );
+      });
     });
 
     describe('Safe individual update path', () => {
@@ -224,6 +245,40 @@ describe('Bulk operations', () => {
           priority: 4,
           done: true,
         }));
+      });
+
+      it('should update bucket_id through the safe task update path', async () => {
+        mockSafeScalarUpdates([
+          {
+            id: 1,
+            project_id: 13,
+            bucket_id: 38,
+            title: 'Task 1',
+            description: 'Keep this description',
+          },
+          {
+            id: 2,
+            project_id: 13,
+            bucket_id: 38,
+            title: 'Task 2',
+          },
+        ]);
+
+        const result = await bulkUpdateTasks({
+          taskIds: [1, 2],
+          field: 'bucket_id',
+          value: 39,
+        });
+
+        expect(mockClient.tasks.updateTask).toHaveBeenCalledWith(
+          1,
+          expect.objectContaining({ bucket_id: 39 }),
+        );
+        expect(mockClient.tasks.updateTask).toHaveBeenCalledWith(
+          2,
+          expect.objectContaining({ bucket_id: 39 }),
+        );
+        expect(result.content[0].text).toContain('Successfully updated 2 tasks');
       });
 
       it('should handle repeat_mode conversion', async () => {

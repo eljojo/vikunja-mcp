@@ -114,6 +114,9 @@ export function applyFieldUpdate(task: Task, field: string | undefined, value: u
     case 'project_id':
       task.project_id = value as number;
       break;
+    case 'bucket_id':
+      task.bucket_id = value as number;
+      break;
     case 'repeat_after':
       task.repeat_after = value as number;
       break;
