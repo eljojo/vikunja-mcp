@@ -33,6 +33,14 @@ describe('applyTaskServiceCompatibility', () => {
 
     await service.updateTaskLabels(21, { label_ids: [2, 3] });
     await service.bulkAssignUsersToTask(21, { user_ids: [1, 4] });
+    await (service as TaskService & {
+      moveTaskToBucket: (
+        projectId: number,
+        viewId: number,
+        bucketId: number,
+        taskId: number,
+      ) => Promise<unknown>;
+    }).moveTaskToBucket(13, 52, 39, 35);
 
     expect(request).toHaveBeenNthCalledWith(
       1,
@@ -45,6 +53,12 @@ describe('applyTaskServiceCompatibility', () => {
       '/tasks/21/assignees/bulk',
       'POST',
       { assignees: [{ id: 1 }, { id: 4 }] },
+    );
+    expect(request).toHaveBeenNthCalledWith(
+      3,
+      '/projects/13/views/52/buckets/39/tasks',
+      'POST',
+      { task_id: 35 },
     );
   });
 

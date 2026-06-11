@@ -21,6 +21,8 @@ describe('task bucket schemas', () => {
       expect.objectContaining({
         bucketId: expect.any(Object),
         bucket_id: expect.any(Object),
+        viewId: expect.any(Object),
+        view_id: expect.any(Object),
       }),
       expect.any(Function),
     );

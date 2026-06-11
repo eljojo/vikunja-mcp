@@ -18,12 +18,15 @@ import { transformApiError, handleFetchError, handleStatusCodeError } from '../.
 import { AUTH_ERROR_MESSAGES } from '../constants';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
+import { moveTaskToBucket } from '../../../client/applyTaskServiceCompatibility';
 
 export interface UpdateTaskArgs {
   id?: number;
   projectId?: number;
   bucketId?: number;
   bucket_id?: number;
+  viewId?: number;
+  view_id?: number;
   title?: string;
   description?: string;
   dueDate?: string;
@@ -62,6 +65,16 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
     if (bucketId !== undefined) {
       validateId(bucketId, 'bucketId');
     }
+    const viewId = resolveViewId(args);
+    if (viewId !== undefined) {
+      validateId(viewId, 'viewId');
+    }
+    if (bucketId !== undefined && viewId === undefined) {
+      throw new MCPError(
+        ErrorCode.VALIDATION_ERROR,
+        'viewId is required when moving a task to a bucket',
+      );
+    }
 
     // Validate date if provided
     if (args.dueDate) {
@@ -74,8 +87,10 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
     const updateState = await analyzeUpdateState(client, args.id, args);
 
     // Build and apply the update
-    const updateData = buildUpdateData(updateState.currentTask, args);
-    await client.tasks.updateTask(args.id, updateData);
+    if (hasTaskFieldUpdates(args)) {
+      const updateData = buildUpdateData(updateState.currentTask, args);
+      await client.tasks.updateTask(args.id, updateData);
+    }
 
     // Update labels if provided
     if (args.labels !== undefined) {
@@ -87,8 +102,30 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
       await updateTaskAssignees(client, args.id, args.assignees);
     }
 
+    let movedBucketId: number | undefined;
+    if (bucketId !== undefined && viewId !== undefined) {
+      const projectId = args.projectId ?? updateState.currentTask.project_id;
+      if (projectId === undefined) {
+        throw new MCPError(
+          ErrorCode.VALIDATION_ERROR,
+          'projectId is required when the task response does not include a project',
+        );
+      }
+      const relation = await moveTaskToBucket(
+        client.tasks,
+        projectId,
+        viewId,
+        bucketId,
+        args.id,
+      );
+      movedBucketId = relation.bucket_id;
+    }
+
     // Fetch the complete updated task
-    const completeTask = await client.tasks.getTask(args.id);
+    const fetchedTask = await client.tasks.getTask(args.id);
+    const completeTask = movedBucketId === undefined
+      ? fetchedTask
+      : { ...fetchedTask, bucket_id: movedBucketId };
     if (args.projectId !== undefined && completeTask.project_id !== args.projectId) {
       throw new MCPError(
         ErrorCode.API_ERROR,
@@ -238,6 +275,34 @@ function resolveBucketId(args: UpdateTaskArgs): number | undefined {
   }
 
   return args.bucketId ?? args.bucket_id;
+}
+
+function resolveViewId(args: UpdateTaskArgs): number | undefined {
+  if (
+    args.viewId !== undefined &&
+    args.view_id !== undefined &&
+    args.viewId !== args.view_id
+  ) {
+    throw new MCPError(
+      ErrorCode.VALIDATION_ERROR,
+      'viewId and view_id must match when both are provided',
+    );
+  }
+
+  return args.viewId ?? args.view_id;
+}
+
+function hasTaskFieldUpdates(args: UpdateTaskArgs): boolean {
+  return [
+    args.projectId,
+    args.title,
+    args.description,
+    args.dueDate,
+    args.priority,
+    args.done,
+    args.repeatAfter,
+    args.repeatMode,
+  ].some((value) => value !== undefined);
 }
 
 /**

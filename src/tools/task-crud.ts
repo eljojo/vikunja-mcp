@@ -109,6 +109,8 @@ export function registerTaskCrudTool(
       projectId: z.number().optional(),
       bucketId: z.number().int().positive().optional(),
       bucket_id: z.number().int().positive().optional(),
+      viewId: z.number().int().positive().optional(),
+      view_id: z.number().int().positive().optional(),
       dueDate: z.string().optional(),
       priority: z.number().min(0).max(5).optional(),
       labels: z.array(z.number()).optional(),
