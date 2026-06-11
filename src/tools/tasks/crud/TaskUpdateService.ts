@@ -22,6 +22,8 @@ import { formatAorpAsMarkdown } from '../../../utils/response-factory';
 export interface UpdateTaskArgs {
   id?: number;
   projectId?: number;
+  bucketId?: number;
+  bucket_id?: number;
   title?: string;
   description?: string;
   dueDate?: string;
@@ -56,6 +58,10 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
     if (args.projectId !== undefined) {
       validateId(args.projectId, 'projectId');
     }
+    const bucketId = resolveBucketId(args);
+    if (bucketId !== undefined) {
+      validateId(bucketId, 'bucketId');
+    }
 
     // Validate date if provided
     if (args.dueDate) {
@@ -87,6 +93,12 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
       throw new MCPError(
         ErrorCode.API_ERROR,
         `Task ${args.id} was not moved to project ${args.projectId}`,
+      );
+    }
+    if (bucketId !== undefined && completeTask.bucket_id !== bucketId) {
+      throw new MCPError(
+        ErrorCode.API_ERROR,
+        `Task ${args.id} was not moved to bucket ${bucketId}`,
       );
     }
 
@@ -153,6 +165,7 @@ async function analyzeUpdateState(client: VikunjaClient, taskId: number, args: U
   if (currentTask.repeat_after !== undefined) previousState.repeat_after = currentTask.repeat_after;
   if (currentTask.repeat_mode !== undefined) previousState.repeat_mode = currentTask.repeat_mode;
   if (currentTask.project_id !== undefined) previousState.project_id = currentTask.project_id;
+  if (currentTask.bucket_id !== undefined) previousState.bucket_id = currentTask.bucket_id;
 
   // Track which fields are being updated
   const affectedFields: string[] = [];
@@ -163,6 +176,8 @@ async function analyzeUpdateState(client: VikunjaClient, taskId: number, args: U
   if (args.priority !== undefined && args.priority !== currentTask.priority) affectedFields.push('priority');
   if (args.done !== undefined && args.done !== currentTask.done) affectedFields.push('done');
   if (args.projectId !== undefined && args.projectId !== currentTask.project_id) affectedFields.push('projectId');
+  const bucketId = resolveBucketId(args);
+  if (bucketId !== undefined && bucketId !== currentTask.bucket_id) affectedFields.push('bucketId');
   if (args.repeatAfter !== undefined && args.repeatAfter !== currentTask.repeat_after) affectedFields.push('repeatAfter');
   if (args.repeatMode !== undefined && args.repeatMode !== currentTask.repeat_mode) affectedFields.push('repeatMode');
   if (args.labels !== undefined) affectedFields.push('labels');
@@ -180,10 +195,12 @@ async function analyzeUpdateState(client: VikunjaClient, taskId: number, args: U
  * This prevents the API from clearing fields that aren't explicitly updated
  */
 function buildUpdateData(currentTask: Task, args: UpdateTaskArgs): Task {
+  const bucketId = resolveBucketId(args);
   const updateData: Task = {
     ...buildWritableTaskSnapshot(currentTask),
     // Override with any provided updates
     ...(args.projectId !== undefined && { project_id: args.projectId }),
+    ...(bucketId !== undefined && { bucket_id: bucketId }),
     ...(args.title !== undefined && { title: args.title }),
     ...(args.description !== undefined && { description: args.description }),
     ...(args.dueDate !== undefined && { due_date: args.dueDate }),
@@ -206,6 +223,21 @@ function buildUpdateData(currentTask: Task, args: UpdateTaskArgs): Task {
   };
 
   return updateData;
+}
+
+function resolveBucketId(args: UpdateTaskArgs): number | undefined {
+  if (
+    args.bucketId !== undefined &&
+    args.bucket_id !== undefined &&
+    args.bucketId !== args.bucket_id
+  ) {
+    throw new MCPError(
+      ErrorCode.VALIDATION_ERROR,
+      'bucketId and bucket_id must match when both are provided',
+    );
+  }
+
+  return args.bucketId ?? args.bucket_id;
 }
 
 /**

@@ -151,6 +151,8 @@ export function registerTasksTool(
       title: z.string().optional(),
       description: z.string().optional(),
       projectId: z.number().optional(),
+      bucketId: z.number().int().positive().optional(),
+      bucket_id: z.number().int().positive().optional(),
       dueDate: z.string().optional(),
       priority: z.number().min(0).max(5).optional(),
       labels: z.array(z.number()).optional(),
