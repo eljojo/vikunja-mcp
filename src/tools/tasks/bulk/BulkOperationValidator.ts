@@ -10,6 +10,8 @@ export interface BulkUpdateArgs {
   taskIds?: number[];
   field?: string;
   value?: unknown;
+  viewId?: number;
+  view_id?: number;
 }
 
 export interface BulkDeleteArgs {
@@ -63,6 +65,16 @@ export const bulkOperationValidator = {
     }
 
     args.taskIds.forEach((id) => validateId(id, 'task ID'));
+    const viewId = resolveViewId(args);
+    if (viewId !== undefined) {
+      validateId(viewId, 'viewId');
+    }
+    if (args.field === 'bucket_id' && viewId === undefined) {
+      throw new MCPError(
+        ErrorCode.VALIDATION_ERROR,
+        'viewId is required for bucket_id bulk updates',
+      );
+    }
   },
 
   /**
@@ -79,7 +91,7 @@ export const bulkOperationValidator = {
     }
 
     // Handle numeric fields that come as strings
-    if (args.field && ['priority', 'project_id', 'repeat_after'].includes(args.field) && typeof args.value === 'string') {
+    if (args.field && ['priority', 'project_id', 'bucket_id', 'repeat_after'].includes(args.field) && typeof args.value === 'string') {
       const numValue = Number(args.value);
       if (!isNaN(numValue)) {
         args.value = numValue;
@@ -96,6 +108,7 @@ export const bulkOperationValidator = {
       'priority',
       'due_date',
       'project_id',
+      'bucket_id',
       'assignees',
       'labels',
       'repeat_after',
@@ -120,8 +133,8 @@ export const bulkOperationValidator = {
       validateDateString(args.value, 'due_date');
     }
 
-    if (args.field === 'project_id' && typeof args.value === 'number') {
-      validateId(args.value, 'project_id');
+    if (['project_id', 'bucket_id'].includes(args.field) && typeof args.value === 'number') {
+      validateId(args.value, args.field);
     }
 
     if (['assignees', 'labels'].includes(args.field)) {
@@ -228,3 +241,17 @@ export const bulkOperationValidator = {
     });
   }
 };
+
+export function resolveViewId(args: BulkUpdateArgs): number | undefined {
+  if (
+    args.viewId !== undefined &&
+    args.view_id !== undefined &&
+    args.viewId !== args.view_id
+  ) {
+    throw new MCPError(
+      ErrorCode.VALIDATION_ERROR,
+      'viewId and view_id must match when both are provided',
+    );
+  }
+  return args.viewId ?? args.view_id;
+}

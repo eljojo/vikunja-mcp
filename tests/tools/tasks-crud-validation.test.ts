@@ -41,6 +41,7 @@ describe('Tasks CRUD - Validation Coverage', () => {
         updateTaskLabels: jest.fn(),
         bulkAssignUsersToTask: jest.fn(),
         removeUserFromTask: jest.fn(),
+        moveTaskToBucket: jest.fn(),
       },
     } as any;
 
@@ -272,6 +273,92 @@ describe('Tasks CRUD - Validation Coverage', () => {
   });
 
   describe('affectedFields tracking', () => {
+    it('should move a task to a bucket with bucketId', async () => {
+      const currentTask = {
+        id: 1,
+        project_id: 13,
+        bucket_id: 38,
+        title: 'Budget task',
+        done: false,
+        assignees: [],
+      };
+      const updatedTask = {
+        ...currentTask,
+        bucket_id: 39,
+      };
+
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce(currentTask)
+        .mockResolvedValueOnce(updatedTask);
+      mockClient.tasks.updateTask.mockResolvedValue(updatedTask);
+      mockClient.tasks.moveTaskToBucket.mockResolvedValue({
+        bucket_id: 39,
+        task_id: 1,
+        project_view_id: 52,
+      });
+
+      const result = await updateTask({
+        id: 1,
+        bucketId: 39,
+        viewId: 52,
+      });
+
+      expect(mockClient.tasks.updateTask).not.toHaveBeenCalled();
+      expect(mockClient.tasks.moveTaskToBucket).toHaveBeenCalledWith(
+        13,
+        52,
+        39,
+        1,
+      );
+      expect(result.content[0].text).toContain('Task updated successfully');
+      expect(result.content[0].text).toContain('bucketId');
+    });
+
+    it('should accept bucket_id as an update alias', async () => {
+      const currentTask = {
+        id: 1,
+        project_id: 13,
+        bucket_id: 38,
+        title: 'Budget task',
+        done: false,
+        assignees: [],
+      };
+      mockClient.tasks.getTask
+        .mockResolvedValueOnce(currentTask)
+        .mockResolvedValueOnce({ ...currentTask, bucket_id: 40 });
+      mockClient.tasks.updateTask.mockResolvedValue({ ...currentTask, bucket_id: 40 });
+      mockClient.tasks.moveTaskToBucket.mockResolvedValue({
+        bucket_id: 40,
+        task_id: 1,
+        project_view_id: 52,
+      });
+
+      await updateTask({ id: 1, bucket_id: 40, view_id: 52 });
+
+      expect(mockClient.tasks.moveTaskToBucket).toHaveBeenCalledWith(
+        13,
+        52,
+        40,
+        1,
+      );
+    });
+
+    it('should reject conflicting bucket parameter aliases', async () => {
+      await expect(updateTask({
+        id: 1,
+        bucketId: 39,
+        bucket_id: 40,
+        viewId: 52,
+      })).rejects.toThrow('bucketId and bucket_id must match');
+    });
+
+    it('should require viewId for bucket moves', async () => {
+      await expect(updateTask({
+        id: 1,
+        bucketId: 39,
+      })).rejects.toThrow('viewId is required');
+    });
+
     it('should track field changes correctly in updateTask', async () => {
       const mockTask = {
         id: 1,

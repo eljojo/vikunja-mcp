@@ -13,6 +13,8 @@ import { formatAorpAsMarkdown } from '../../utils/response-factory';
 import { AUTH_ERROR_MESSAGES, REPEAT_MODE_MAP } from './constants';
 import { bulkOperationValidator } from './bulk/BulkOperationValidator';
 import type { BulkUpdateArgs, BulkDeleteArgs, BulkCreateArgs, BulkCreateTaskData } from './bulk/BulkOperationValidator';
+import { resolveViewId } from './bulk/BulkOperationValidator';
+import { moveTaskToBucket } from '../../client/applyTaskServiceCompatibility';
 
 // ==================== BATCH PROCESSORS ====================
 
@@ -99,6 +101,27 @@ export async function bulkUpdateTasks(args: BulkUpdateArgs): Promise<{ content: 
           () => client.tasks.updateTaskLabels(taskId, { label_ids: args.value as number[] }),
           { ...RETRY_CONFIG.AUTH_ERRORS, shouldRetry: isAuthenticationError },
         );
+      } else if (args.field === 'bucket_id') {
+        const viewId = resolveViewId(args);
+        const projectId = current.project_id;
+        if (viewId === undefined || projectId === undefined) {
+          throw new MCPError(
+            ErrorCode.VALIDATION_ERROR,
+            'viewId and the task project are required for bucket moves',
+          );
+        }
+        const relation = await moveTaskToBucket(
+          client.tasks,
+          projectId,
+          viewId,
+          args.value as number,
+          taskId,
+        );
+        return {
+          ...current,
+          ...(relation.task ?? {}),
+          bucket_id: relation.bucket_id,
+        };
       } else {
         const updateValue = args.field === 'repeat_mode' && typeof args.value === 'string'
           ? (REPEAT_MODE_MAP[args.value] ?? args.value)

@@ -30,6 +30,8 @@ export function registerTaskBulkTool(
       taskIds: z.array(z.number()).optional(),
       field: z.string().optional(),
       value: z.unknown().optional(),
+      viewId: z.number().int().positive().optional(),
+      view_id: z.number().int().positive().optional(),
       projectId: z.number().optional(), // Add projectId for bulk-create
       tasks: z
         .array(
@@ -99,7 +101,9 @@ export function registerTaskBulkTool(
             const filteredArgs = {
               taskIds: args.taskIds || [],
               field: args.field,
-              value: args.value
+              value: args.value,
+              ...(args.viewId !== undefined && { viewId: args.viewId }),
+              ...(args.view_id !== undefined && { view_id: args.view_id }),
             };
             return bulkUpdateTasks(filteredArgs);
           }
