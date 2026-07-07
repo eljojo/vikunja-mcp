@@ -40,6 +40,44 @@ export interface DataItem {
 }
 
 /**
+ * Safety bound on how many collection items are rendered in one response.
+ * The API paginates via page/perPage; this only prevents a single unfiltered
+ * page from dumping an unbounded payload. Beyond it, callers narrow or page.
+ */
+const MAX_RENDERED_ITEMS = 100;
+
+/**
+ * Metadata keys suppressed from the success output. They are either redundant
+ * with the ✅ header / message / rendered item (success, operation, timestamp,
+ * taskId, count, verbosity) or filtering diagnostics only useful when
+ * debugging. Errors keep full detail via formatErrorMessage.
+ */
+const SUPPRESSED_SUCCESS_METADATA_KEYS = new Set([
+  'timestamp',
+  'success',
+  'operation',
+  'taskId',
+  'count',
+  'verbosity',
+  'filteringMethod',
+  'filteringNote',
+  'serverSideFilteringUsed',
+  'serverSideFilteringAttempted',
+  'clientSideFiltering',
+  'pagination',
+]);
+
+/**
+ * Pagination shape optionally carried on list metadata
+ */
+interface PaginationInfo {
+  page: number;
+  perPage: number;
+  returned: number;
+  hasMore: boolean;
+}
+
+/**
  * Simple response structure - replaces complex AORP system
  */
 export interface SimpleResponse {
@@ -104,18 +142,27 @@ export function createErrorResponse(
  * Replaces complex AORP markdown formatting
  */
 export function formatSuccessMessage(
-  operation: string,
+  _operation: string,
   message: string,
   data?: ResponseData,
   metadata?: Record<string, unknown>
 ): string {
-  let content = `## ✅ Success\n\n${message}\n\n**Operation:** ${operation}\n\n`;
+  let content = `## ✅ Success\n\n${message}\n\n`;
 
-  // Include metadata first if provided
+  // Pagination is surfaced in the collection footer, not the raw metadata dump.
+  const pagination =
+    metadata && typeof metadata === 'object'
+      ? (metadata.pagination as PaginationInfo | undefined)
+      : undefined;
+
+  // Include metadata, minus redundant envelope noise (see suppressed set).
   if (metadata && typeof metadata === 'object') {
-    const metadataEntries = Object.entries(metadata).filter(([_, value]) => value !== undefined && value !== null);
+    const metadataEntries = Object.entries(metadata).filter(
+      ([key, value]) =>
+        value !== undefined && value !== null && !SUPPRESSED_SUCCESS_METADATA_KEYS.has(key),
+    );
     if (metadataEntries.length > 0) {
-      content += formatObjectData(metadata);
+      content += formatObjectData(Object.fromEntries(metadataEntries));
     }
   }
 
@@ -124,15 +171,9 @@ export function formatSuccessMessage(
     const collection = data.tasks || data.projects || data.labels || data.users || data.items;
 
     if (collection && Array.isArray(collection)) {
-      content += `**Results:** ${collection.length} item(s)\n\n`;
-      if (collection.length > 0 && collection.length <= 10) {
-        content += formatDataItems(collection as DataItem[]);
-      }
+      content += formatCollection(collection as DataItem[], pagination);
     } else if (Array.isArray(data)) {
-      content += `**Results:** ${data.length} item(s)\n\n`;
-      if (data.length > 0 && data.length <= 10) {
-        content += formatDataItems(data as DataItem[]);
-      }
+      content += formatCollection(data as DataItem[], pagination);
     } else if (data && typeof data === 'object') {
       content += formatObjectData(data as Record<string, unknown>);
     }
@@ -204,8 +245,8 @@ function formatTaskItem(task: Task, index: number): string {
     parts.push(`- **Priority:** ${stars} (${task.priority}/5)`);
   }
 
-  // Due date (if set)
-  if (task.due_date) {
+  // Due date (if set). Vikunja returns the zero date for "no due date".
+  if (task.due_date && !task.due_date.startsWith('0001-01-01')) {
     parts.push(`- **Due:** ${task.due_date}`);
   }
 
@@ -219,7 +260,8 @@ function formatTaskItem(task: Task, index: number): string {
     parts.push(`- **Project:** ${task.project_id}`);
   }
 
-  if (task.bucket_id !== undefined) {
+  // Bucket (only when assigned; 0 means "no bucket").
+  if (task.bucket_id !== undefined && task.bucket_id !== 0) {
     parts.push(`- **Bucket:** ${task.bucket_id}`);
   }
 
@@ -238,12 +280,83 @@ function formatTaskItem(task: Task, index: number): string {
     parts.push(`- **Assignees:** ${assigneeNames}`);
   }
 
-  // Description (if exists)
+  // Description (if exists). Vikunja stores rich text as HTML; render it as
+  // compact plain text so link cruft and markup don't dominate the payload.
   if (task.description) {
-    parts.push(`- **Description:** ${task.description}`);
+    const desc = htmlToPlainText(task.description);
+    if (desc) {
+      if (desc.includes('\n')) {
+        const indented = desc.split('\n').map((l) => `  ${l}`).join('\n');
+        parts.push(`- **Description:**\n${indented}`);
+      } else {
+        parts.push(`- **Description:** ${desc}`);
+      }
+    }
   }
 
   return parts.join('\n') + '\n';
+}
+
+/**
+ * Convert Vikunja's HTML rich text to compact plain text.
+ * Unwraps anchors (keeping the URL, and link text only when it differs),
+ * turns block/list markup into newlines/bullets, strips remaining tags,
+ * decodes common entities, and drops zero-width artifacts.
+ */
+function htmlToPlainText(html: string): string {
+  const entities: Record<string, string> = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&nbsp;': ' ',
+  };
+
+  return html
+    // Anchors → "text (url)", or just "url" when text is empty/equal
+    .replace(/<a\b[^>]*?href="([^"]*)"[^>]*>(.*?)<\/a>/gi, (_m, href: string, inner: string) => {
+      const label = inner.replace(/<[^>]+>/g, '').trim();
+      return !label || label === href ? href : `${label} (${href})`;
+    })
+    .replace(/<li[^>]*>/gi, '\n- ')
+    .replace(/<\/(p|div|h[1-6]|ul|ol|li|tr|blockquote)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&nbsp;/g, (m) => entities[m] ?? m)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+/**
+ * Format a collection with a full item render (up to a safety bound) and a
+ * pagination/truncation footer so callers know when more results exist.
+ */
+function formatCollection(collection: DataItem[], pagination?: PaginationInfo): string {
+  let out = `**Results:** ${collection.length} item(s)\n\n`;
+  if (collection.length === 0) {
+    return out;
+  }
+
+  const shown = collection.slice(0, MAX_RENDERED_ITEMS);
+  out += formatDataItems(shown);
+
+  if (collection.length > MAX_RENDERED_ITEMS) {
+    out +=
+      `_Showing first ${MAX_RENDERED_ITEMS} of ${collection.length}. ` +
+      `Narrow with a \`filter\` or request a specific \`page\`/\`perPage\`._\n\n`;
+  } else if (pagination?.hasMore) {
+    out +=
+      `_Page ${pagination.page} (${pagination.perPage}/page). More results may exist — ` +
+      `pass \`page:${pagination.page + 1}\` or a higher \`perPage\` to see them._\n\n`;
+  }
+
+  return out;
 }
 
 /**

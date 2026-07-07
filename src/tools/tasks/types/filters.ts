@@ -43,6 +43,20 @@ export interface FilteringParams {
 }
 
 /**
+ * Pagination information for a listing response
+ */
+export interface PaginationInfo {
+  /** Page that was returned (1-based) */
+  page: number;
+  /** Effective page size used for the API call */
+  perPage: number;
+  /** Number of items returned in this page */
+  returned: number;
+  /** Whether more results likely exist beyond this page */
+  hasMore: boolean;
+}
+
+/**
  * Metadata about the filtering operation performed
  */
 export interface FilteringMetadata {
@@ -50,6 +64,8 @@ export interface FilteringMetadata {
   serverSideFilteringAttempted: boolean;
   clientSideFiltering: boolean;
   filteringNote: string;
+  /** Pagination details for the returned page (absent for non-list flows) */
+  pagination?: PaginationInfo;
 }
 
 /**

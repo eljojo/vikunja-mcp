@@ -15,6 +15,19 @@ import { MCPError, ErrorCode } from '../../../types';
 import { logger } from '../../../utils/logger';
 
 /**
+ * Default page size for plain browsing (no client-side narrowing).
+ * Small enough to page through results at human scale.
+ */
+export const DEFAULT_LIST_PAGE_SIZE = 50;
+
+/**
+ * Page size used when the request needs the full result set loaded so that
+ * client-side narrowing (filter / done / bucket) is applied correctly rather
+ * than against a partial page.
+ */
+export const FULL_LOAD_PAGE_SIZE = 1000;
+
+/**
  * Executes filtering operations on tasks with comprehensive error handling
  */
 export const FilterExecutor = {
@@ -107,6 +120,17 @@ export const FilterExecutor = {
         serverSideFilteringAttempted,
         filteringResult.metadata.filteringNote
       );
+
+      // Attach pagination so the response can hint whether more results exist.
+      // A full returned page (returned === perPage) implies there may be a next page.
+      const perPage = params.per_page ?? processedTasks.length;
+      const page = params.page ?? 1;
+      filteringMetadata.pagination = {
+        page,
+        perPage,
+        returned: processedTasks.length,
+        hasMore: perPage > 0 && processedTasks.length >= perPage,
+      };
 
       // Build return object, only including defined properties to satisfy exactOptionalPropertyTypes
       const result: TaskFilterExecutionResult = {
@@ -212,18 +236,25 @@ export const FilterExecutor = {
     if (args.search !== undefined) params.s = args.search;
     if (args.sort !== undefined) params.sort_by = args.sort;
 
-    // Memory protection: Check if we should implement pagination limits
-    // Note: Vikunja API doesn't provide task count endpoints, so we use conservative defaults
-    // and rely on user-provided pagination parameters
+    // Pagination defaults. Plain browsing pages at a human scale so the `page`
+    // param is useful; requests that narrow client-side load the full set so
+    // the narrowing runs against everything, not just the first page.
     if (!params.per_page) {
-      // Set default pagination to prevent unbounded loading
-      params.per_page = 1000; // Conservative default
+      const needsFullLoad = Boolean(
+        args.filter ||
+        args.filterId ||
+        args.done !== undefined ||
+        args.bucketId !== undefined ||
+        args.bucket_id !== undefined,
+      );
+      params.per_page = needsFullLoad ? FULL_LOAD_PAGE_SIZE : DEFAULT_LIST_PAGE_SIZE;
       if (!params.page) {
         params.page = 1;
       }
-      logger.info('Applied default pagination for memory protection', {
+      logger.info('Applied default pagination', {
         per_page: params.per_page,
-        page: params.page
+        page: params.page,
+        needsFullLoad,
       });
     }
 
