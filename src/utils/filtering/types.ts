@@ -32,6 +32,12 @@ export interface FilteringParams {
   filterExpression: FilterExpression | null;
   filterString: string | undefined;
   params: GetTasksParams;
+  /**
+   * When true, load the complete result set by paging through the API rather
+   * than a single page. Required for correct client-side narrowing, since the
+   * Vikunja server caps per_page (default 50) and one request is not the whole set.
+   */
+  loadAll?: boolean;
 }
 
 /**

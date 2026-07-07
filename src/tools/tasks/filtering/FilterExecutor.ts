@@ -55,11 +55,22 @@ export const FilterExecutor = {
         enableServerSide: Boolean(filterString)
       });
 
+      // Client-side narrowing must see the whole set, not just the first API
+      // page (server caps per_page), so page through the full result set.
+      const loadAll = Boolean(
+        filterExpression ||
+        filterString ||
+        args.done !== undefined ||
+        args.bucketId !== undefined ||
+        args.bucket_id !== undefined,
+      );
+
       const filteringParams: FilteringParams = {
         args: args as FilteringArgs,
         filterExpression,
         filterString,
-        params
+        params,
+        loadAll,
       };
 
       const filteringResult = await filteringContext.execute(filteringParams);

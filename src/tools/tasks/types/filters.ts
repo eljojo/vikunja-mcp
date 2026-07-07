@@ -40,6 +40,8 @@ export interface FilteringParams {
   filterExpression: FilterExpression | null;
   filterString: string | undefined;
   params: GetTasksParams;
+  /** Page through the full result set rather than a single (capped) page */
+  loadAll?: boolean;
 }
 
 /**
