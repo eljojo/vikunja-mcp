@@ -373,9 +373,58 @@ function asTaskList(items: DataItem[]): Task[] | null {
   return items.every(isTaskItem) ? (items as unknown as Task[]) : null;
 }
 
+/** Escape a value for use inside a markdown table cell. */
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\s*\n+\s*/g, ' / ').trim();
+}
+
+function hasRealDueDate(task: Task): boolean {
+  return Boolean(task.due_date && !task.due_date.startsWith('0001-01-01'));
+}
+
 /**
- * Render tasks grouped by project, with a header per project and the per-task
- * project line suppressed (it lives in the header). Numbering restarts per group.
+ * Render a group of tasks as a compact markdown table. Columns are dynamic:
+ * only those that at least one task populates are emitted, so a plain list of
+ * title-only tasks collapses to `| ID | Task |`. The Notes column holds the
+ * HTML-stripped description, newlines flattened.
+ */
+function formatTaskTable(tasks: Task[]): string {
+  const showDone = new Set(tasks.map((t) => Boolean(t.done))).size > 1;
+  const showDue = tasks.some(hasRealDueDate);
+  const showPriority = tasks.some((t) => (t.priority ?? 0) > 0);
+  const showLabels = tasks.some((t) => Array.isArray(t.labels) && t.labels.length > 0);
+  const showUpdated = tasks.some((t) => Boolean(t.updated_relative));
+  const showNotes = tasks.some((t) => Boolean(t.description) && Boolean(htmlToPlainText(t.description as string)));
+
+  const columns: string[] = ['ID'];
+  if (showDone) columns.push('✓');
+  columns.push('Task');
+  if (showDue) columns.push('Due');
+  if (showPriority) columns.push('Pri');
+  if (showLabels) columns.push('Labels');
+  if (showUpdated) columns.push('Updated');
+  if (showNotes) columns.push('Notes');
+
+  const rows = tasks.map((task) => {
+    const cells: string[] = [String(task.id ?? '')];
+    if (showDone) cells.push(task.done ? '✅' : '');
+    cells.push(escapeCell(task.title ?? ''));
+    if (showDue) cells.push(hasRealDueDate(task) ? (task.due_date as string).slice(0, 10) : '');
+    if (showPriority) cells.push((task.priority ?? 0) > 0 ? String(task.priority) : '');
+    if (showLabels) cells.push(task.labels?.map((l) => l.title).join(', ') ?? '');
+    if (showUpdated) cells.push(task.updated_relative ?? '');
+    if (showNotes) cells.push(task.description ? escapeCell(htmlToPlainText(task.description)) : '');
+    return `| ${cells.join(' | ')} |`;
+  });
+
+  const header = `| ${columns.join(' | ')} |`;
+  const separator = `| ${columns.map(() => '---').join(' | ')} |`;
+  return [header, separator, ...rows].join('\n') + '\n';
+}
+
+/**
+ * Render tasks grouped by project: a header per project (carrying the project
+ * name, so it isn't repeated per row) followed by a compact task table.
  */
 function formatTasksGroupedByProject(tasks: Task[]): string {
   const groups = new Map<number, Task[]>();
@@ -392,10 +441,7 @@ function formatTasksGroupedByProject(tasks: Task[]): string {
   const sections = Array.from(groups.entries()).map(([pid, group]) => {
     const name = group[0]?.project_title;
     const header = name ? `${name} (ID: ${pid})` : `Project ${pid}`;
-    const body = group
-      .map((task, i) => formatTaskItem(task, i, { showProject: false }))
-      .join('\n');
-    return `### 📁 ${header} — ${group.length} task(s)\n\n${body}`;
+    return `### 📁 ${header} — ${group.length} task(s)\n\n${formatTaskTable(group)}`;
   });
 
   return sections.join('\n') + '\n';
