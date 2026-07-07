@@ -7,6 +7,8 @@ import type { Task, GetTasksParams } from 'node-vikunja';
 import type { FilterExpression } from '../../../filters';
 import type { TaskListingArgs, TaskFilterExecutionResult } from '../types/filters';
 import type { TaskFilterStorage, FilteringParams, FilteringMetadata, FilteringArgs } from '../types/filters';
+import { getClientFromContext } from '../../../client';
+import { enrichTasksWithBucketIds } from '../../../client/applyTaskServiceCompatibility';
 import { FilteringContext } from '../../../utils/filtering';
 import { validateTaskCountLimit, createTaskLimitExceededMessage, logMemoryUsage } from '../../../utils/memory';
 import { MCPError, ErrorCode } from '../../../types';
@@ -27,6 +29,14 @@ export const FilterExecutor = {
     _storage: TaskFilterStorage
   ): Promise<TaskFilterExecutionResult> {
     try {
+      const viewId = FilterExecutor.resolveViewId(args);
+      if (FilterExecutor.resolveBucketId(args) !== undefined && viewId === undefined) {
+        throw new MCPError(
+          ErrorCode.VALIDATION_ERROR,
+          'viewId is required when filtering tasks by bucket',
+        );
+      }
+
       // Execute filtering using strategy pattern
       const filteringContext = new FilteringContext({
         enableServerSide: Boolean(filterString)
@@ -40,7 +50,7 @@ export const FilterExecutor = {
       };
 
       const filteringResult = await filteringContext.execute(filteringParams);
-      const tasks = filteringResult.tasks;
+      let tasks = filteringResult.tasks;
 
       // Extract metadata for response formatting
       const {
@@ -81,6 +91,11 @@ export const FilterExecutor = {
 
       // Log memory usage for monitoring
       logMemoryUsage('task listing', actualTaskCount);
+
+      if (viewId !== undefined) {
+        const client = await getClientFromContext();
+        tasks = await enrichTasksWithBucketIds(client.tasks, tasks, viewId);
+      }
 
       // Apply post-processing filters
       const processedTasks = FilterExecutor.applyPostProcessingFilters(tasks, args);
@@ -135,7 +150,7 @@ export const FilterExecutor = {
       filteredTasks = filteredTasks.filter((task) => task.done === args.done);
     }
 
-    const bucketId = args.bucketId ?? args.bucket_id;
+    const bucketId = FilterExecutor.resolveBucketId(args);
     if (bucketId !== undefined) {
       filteredTasks = filteredTasks.filter((task) => task.bucket_id === bucketId);
     }
@@ -213,6 +228,36 @@ export const FilterExecutor = {
     }
 
     return params;
+  },
+
+  resolveBucketId(args: TaskListingArgs): number | undefined {
+    if (
+      args.bucketId !== undefined &&
+      args.bucket_id !== undefined &&
+      args.bucketId !== args.bucket_id
+    ) {
+      throw new MCPError(
+        ErrorCode.VALIDATION_ERROR,
+        'bucketId and bucket_id must match when both are provided',
+      );
+    }
+
+    return args.bucketId ?? args.bucket_id;
+  },
+
+  resolveViewId(args: TaskListingArgs): number | undefined {
+    if (
+      args.viewId !== undefined &&
+      args.view_id !== undefined &&
+      args.viewId !== args.view_id
+    ) {
+      throw new MCPError(
+        ErrorCode.VALIDATION_ERROR,
+        'viewId and view_id must match when both are provided',
+      );
+    }
+
+    return args.viewId ?? args.view_id;
   },
 
   /**

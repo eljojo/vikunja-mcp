@@ -28,6 +28,8 @@ export interface FilteringArgs {
   done?: boolean;
   bucketId?: number;
   bucket_id?: number;
+  viewId?: number;
+  view_id?: number;
 }
 
 /**

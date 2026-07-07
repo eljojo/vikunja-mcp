@@ -7,9 +7,13 @@ import { MCPError, ErrorCode, getClientFromContext, transformApiError, handleFet
 import { validateId } from '../validation';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
+import { enrichTasksWithBucketIds } from '../../../client/applyTaskServiceCompatibility';
 
 export interface GetTaskArgs {
   id?: number;
+  projectId?: number;
+  viewId?: number;
+  view_id?: number;
   sessionId?: string;
 }
 
@@ -22,14 +26,33 @@ export async function getTask(args: GetTaskArgs): Promise<{ content: Array<{ typ
       throw new MCPError(ErrorCode.VALIDATION_ERROR, 'Task id is required for get operation');
     }
     validateId(args.id, 'id');
+    if (args.projectId !== undefined) {
+      validateId(args.projectId, 'projectId');
+    }
+    const viewId = resolveViewId(args);
+    if (viewId !== undefined) {
+      validateId(viewId, 'viewId');
+    }
 
     const client = await getClientFromContext();
     const task = await client.tasks.getTask(args.id);
+    const enrichedTask = viewId === undefined
+      ? task
+      : ((await enrichTasksWithBucketIds(
+          client.tasks,
+          [
+            {
+              ...task,
+              ...(args.projectId !== undefined && { project_id: args.projectId }),
+            },
+          ],
+          viewId,
+        ))[0] ?? task);
 
     const response = createTaskResponse(
       'get-task',
-      `Retrieved task "${task.title}"`,
-      { task },
+      `Retrieved task "${enrichedTask.title}"`,
+      { task: enrichedTask },
       {
         timestamp: new Date().toISOString(),
         taskId: args.id,
@@ -70,4 +93,19 @@ export async function getTask(args: GetTaskArgs): Promise<{ content: Array<{ typ
     }
     throw transformApiError(error, 'Failed to get task');
   }
+}
+
+function resolveViewId(args: GetTaskArgs): number | undefined {
+  if (
+    args.viewId !== undefined &&
+    args.view_id !== undefined &&
+    args.viewId !== args.view_id
+  ) {
+    throw new MCPError(
+      ErrorCode.VALIDATION_ERROR,
+      'viewId and view_id must match when both are provided',
+    );
+  }
+
+  return args.viewId ?? args.view_id;
 }

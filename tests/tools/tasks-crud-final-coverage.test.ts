@@ -41,6 +41,7 @@ describe('Tasks CRUD - Final Coverage', () => {
         updateTaskLabels: jest.fn(),
         bulkAssignUsersToTask: jest.fn(),
         removeUserFromTask: jest.fn(),
+        getBucketsForView: jest.fn(),
       },
     } as any;
 
@@ -73,6 +74,25 @@ describe('Tasks CRUD - Final Coverage', () => {
       expect(markdown).toContain('**timestamp:**');
 
       expect(result.content[0].type).toBe('text');
+    });
+
+    it('should enrich bucket id from the requested view', async () => {
+      mockClient.tasks.getTask.mockResolvedValue({
+        id: 16,
+        project_id: 13,
+        title: 'Moved task',
+        done: false,
+        bucket_id: 0,
+      });
+      mockClient.tasks.getBucketsForView.mockResolvedValue([
+        { id: 38, tasks: [] },
+        { id: 39, tasks: [{ id: 16, project_id: 13, title: 'Moved task' }] },
+      ]);
+
+      const result = await getTask({ id: 16, viewId: 52 });
+
+      expect(mockClient.tasks.getBucketsForView).toHaveBeenCalledWith(13, 52);
+      expect(result.content[0].text).toContain('**Bucket:** 39');
     });
 
     it('should handle task with undefined title gracefully', async () => {

@@ -7,7 +7,7 @@ import type {
   TaskService,
 } from 'node-vikunja';
 
-type TaskServiceWithRequest = TaskServiceWithBucketMove & {
+type TaskServiceWithRequest = TaskServiceWithBucketSupport & {
   request<T>(
     endpoint: string,
     method: 'GET' | 'POST',
@@ -23,13 +23,22 @@ export interface TaskBucketRelation {
   task?: Task;
 }
 
-type TaskServiceWithBucketMove = TaskService & {
+export interface TaskBucket {
+  id: number;
+  tasks?: Task[];
+}
+
+type TaskServiceWithBucketSupport = TaskService & {
   moveTaskToBucket(
     projectId: number,
     viewId: number,
     bucketId: number,
     taskId: number,
   ): Promise<TaskBucketRelation>;
+  getBucketsForView(
+    projectId: number,
+    viewId: number,
+  ): Promise<TaskBucket[]>;
 };
 
 function hasRequestMethod(service: unknown): service is TaskServiceWithRequest {
@@ -84,6 +93,16 @@ export function applyTaskServiceCompatibility(service: unknown): void {
     'POST',
     { task_id: taskId },
   );
+
+  service.getBucketsForView = (
+    projectId: number,
+    viewId: number,
+  ): Promise<TaskBucket[]> => service.request<TaskBucket[]>(
+    `/projects/${projectId}/views/${viewId}/buckets`,
+    'GET',
+    undefined,
+    { params: { page: 1, per_page: 500 } },
+  );
 }
 
 export function moveTaskToBucket(
@@ -97,7 +116,7 @@ export function moveTaskToBucket(
     throw new Error('The Vikunja task service does not support bucket moves');
   }
 
-  return (service as TaskServiceWithBucketMove)
+  return (service as TaskServiceWithBucketSupport)
     .moveTaskToBucket(projectId, viewId, bucketId, taskId)
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -110,4 +129,66 @@ export function moveTaskToBucket(
       }
       throw error;
     });
+}
+
+export function getBucketsForView(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+): Promise<TaskBucket[]> {
+  if (!('getBucketsForView' in service) || typeof service.getBucketsForView !== 'function') {
+    throw new Error('The Vikunja task service does not support reading view buckets');
+  }
+
+  return (service as TaskServiceWithBucketSupport)
+    .getBucketsForView(projectId, viewId)
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/missing, malformed, expired|invalid token/i.test(message)) {
+        throw new Error(
+          'Vikunja rejected the API token for the Kanban bucket route. ' +
+          'Create a new token with the projects.views_buckets permission. ' +
+          `Original error: ${message}`,
+        );
+      }
+      throw error;
+    });
+}
+
+export async function enrichTasksWithBucketIds(
+  service: TaskService,
+  tasks: Task[],
+  viewId: number,
+): Promise<Task[]> {
+  const tasksByProject = new Map<number, Task[]>();
+  for (const task of tasks) {
+    if (task.project_id === undefined) {
+      continue;
+    }
+    const projectTasks = tasksByProject.get(task.project_id) ?? [];
+    projectTasks.push(task);
+    tasksByProject.set(task.project_id, projectTasks);
+  }
+
+  const bucketIdsByTaskId = new Map<number, number>();
+  await Promise.all(
+    Array.from(tasksByProject.keys()).map(async (projectId) => {
+      const buckets = await getBucketsForView(service, projectId, viewId);
+      for (const bucket of buckets) {
+        if (!Array.isArray(bucket.tasks)) {
+          continue;
+        }
+        for (const bucketTask of bucket.tasks) {
+          if (bucketTask.id !== undefined) {
+            bucketIdsByTaskId.set(bucketTask.id, bucket.id);
+          }
+        }
+      }
+    }),
+  );
+
+  return tasks.map((task) => {
+    const bucketId = task.id === undefined ? undefined : bucketIdsByTaskId.get(task.id);
+    return bucketId === undefined ? task : { ...task, bucket_id: bucketId };
+  });
 }
