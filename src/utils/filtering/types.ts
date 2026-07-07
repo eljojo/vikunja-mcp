@@ -18,6 +18,8 @@ export interface FilteringArgs {
   filterId?: string;
   allProjects?: boolean;
   done?: boolean;
+  bucketId?: number;
+  bucket_id?: number;
 }
 
 /**

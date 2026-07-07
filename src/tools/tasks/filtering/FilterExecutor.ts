@@ -135,6 +135,11 @@ export const FilterExecutor = {
       filteredTasks = filteredTasks.filter((task) => task.done === args.done);
     }
 
+    const bucketId = args.bucketId ?? args.bucket_id;
+    if (bucketId !== undefined) {
+      filteredTasks = filteredTasks.filter((task) => task.bucket_id === bucketId);
+    }
+
     return filteredTasks;
   },
 
