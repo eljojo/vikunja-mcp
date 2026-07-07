@@ -6,8 +6,9 @@
  * stale signal. These fields are never sent back to the API.
  */
 
-import type { VikunjaClient } from 'node-vikunja';
+import type { VikunjaClient, TaskService } from 'node-vikunja';
 import type { Task } from '../types';
+import { getProjectViews, getBucketsForView } from '../client/applyTaskServiceCompatibility';
 import { logger } from './logger';
 
 /** Cache the project id -> name map briefly to avoid refetching on every list. */
@@ -74,6 +75,89 @@ export function relativeAge(iso?: string): string | undefined {
 
   const years = Math.floor(days / 365);
   return `${years}y ago`;
+}
+
+/**
+ * Cache each project's board (kanban) view id. View ids are stable, so this
+ * avoids re-fetching the view list on every list call. `null` = no board view.
+ */
+const boardViewIdCache = new Map<number, number | null>();
+
+async function getBoardViewId(taskService: TaskService, projectId: number): Promise<number | null> {
+  const cached = boardViewIdCache.get(projectId);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let viewId: number | null = null;
+  try {
+    const views = await getProjectViews(taskService, projectId);
+    viewId = (views ?? []).find((v) => v.view_kind === 'kanban')?.id ?? null;
+  } catch (error) {
+    logger.warn('Could not read project views for bucket resolution', {
+      projectId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  boardViewIdCache.set(projectId, viewId);
+  return viewId;
+}
+
+/**
+ * Attach each task's kanban column (board-view bucket title) as `bucket_title`.
+ * Best-effort: on any failure the task keeps no bucket_title. Buckets come back
+ * from the board view already carrying their tasks, so one call per project
+ * yields the full task -> column mapping. Mutates the passed tasks.
+ */
+export async function enrichTasksWithBucketTitles(
+  taskService: TaskService,
+  tasks: Task[],
+): Promise<void> {
+  const byProject = new Map<number, Task[]>();
+  for (const task of tasks) {
+    if (task.project_id === undefined) {
+      continue;
+    }
+    const group = byProject.get(task.project_id);
+    if (group) {
+      group.push(task);
+    } else {
+      byProject.set(task.project_id, [task]);
+    }
+  }
+
+  await Promise.all(
+    Array.from(byProject.entries()).map(async ([projectId, projectTasks]) => {
+      try {
+        const viewId = await getBoardViewId(taskService, projectId);
+        if (viewId === null) {
+          return;
+        }
+        const buckets = await getBucketsForView(taskService, projectId, viewId);
+        const titleByTaskId = new Map<number, string>();
+        for (const bucket of buckets ?? []) {
+          if (!bucket.title || !Array.isArray(bucket.tasks)) {
+            continue;
+          }
+          for (const bucketTask of bucket.tasks) {
+            if (bucketTask.id !== undefined) {
+              titleByTaskId.set(bucketTask.id, bucket.title);
+            }
+          }
+        }
+        for (const task of projectTasks) {
+          const title = task.id === undefined ? undefined : titleByTaskId.get(task.id);
+          if (title !== undefined) {
+            task.bucket_title = title;
+          }
+        }
+      } catch (error) {
+        logger.warn('Could not resolve kanban columns for project', {
+          projectId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
 }
 
 /**

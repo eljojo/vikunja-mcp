@@ -78,6 +78,14 @@ interface PaginationInfo {
 }
 
 /**
+ * Rendering hints for task tables, passed on `data.taskTableOptions`.
+ */
+interface TaskTableOptions {
+  /** Force-show (true) or hide (false) the done column; default: show when mixed */
+  showDone?: boolean;
+}
+
+/**
  * Simple response structure - replaces complex AORP system
  */
 export interface SimpleResponse {
@@ -169,11 +177,14 @@ export function formatSuccessMessage(
   if (data) {
     // Check for known collection types first
     const collection = data.tasks || data.projects || data.labels || data.users || data.items;
+    const taskOptions = (data as Record<string, unknown>).taskTableOptions as
+      | TaskTableOptions
+      | undefined;
 
     if (collection && Array.isArray(collection)) {
-      content += formatCollection(collection as DataItem[], pagination);
+      content += formatCollection(collection as DataItem[], pagination, taskOptions);
     } else if (Array.isArray(data)) {
-      content += formatCollection(data as DataItem[], pagination);
+      content += formatCollection(data as DataItem[], pagination, taskOptions);
     } else if (data && typeof data === 'object') {
       content += formatObjectData(data as Record<string, unknown>);
     }
@@ -385,11 +396,12 @@ function hasRealDueDate(task: Task): boolean {
 /**
  * Render a group of tasks as a compact markdown table. Columns are dynamic:
  * only those that at least one task populates are emitted, so a plain list of
- * title-only tasks collapses to `| ID | Task |`. The Notes column holds the
- * HTML-stripped description, newlines flattened.
+ * title-only tasks collapses to `| ID | Task |`. The Column field is the task's
+ * kanban bucket; Notes holds the HTML-stripped description, newlines flattened.
  */
-function formatTaskTable(tasks: Task[]): string {
-  const showDone = new Set(tasks.map((t) => Boolean(t.done))).size > 1;
+function formatTaskTable(tasks: Task[], options?: TaskTableOptions): string {
+  const showDone = options?.showDone ?? (new Set(tasks.map((t) => Boolean(t.done))).size > 1);
+  const showColumn = tasks.some((t) => Boolean(t.bucket_title));
   const showDue = tasks.some(hasRealDueDate);
   const showPriority = tasks.some((t) => (t.priority ?? 0) > 0);
   const showLabels = tasks.some((t) => Array.isArray(t.labels) && t.labels.length > 0);
@@ -399,6 +411,7 @@ function formatTaskTable(tasks: Task[]): string {
   const columns: string[] = ['ID'];
   if (showDone) columns.push('✓');
   columns.push('Task');
+  if (showColumn) columns.push('Column');
   if (showDue) columns.push('Due');
   if (showPriority) columns.push('Pri');
   if (showLabels) columns.push('Labels');
@@ -409,6 +422,7 @@ function formatTaskTable(tasks: Task[]): string {
     const cells: string[] = [String(task.id ?? '')];
     if (showDone) cells.push(task.done ? '✅' : '');
     cells.push(escapeCell(task.title ?? ''));
+    if (showColumn) cells.push(escapeCell(task.bucket_title ?? ''));
     if (showDue) cells.push(hasRealDueDate(task) ? (task.due_date as string).slice(0, 10) : '');
     if (showPriority) cells.push((task.priority ?? 0) > 0 ? String(task.priority) : '');
     if (showLabels) cells.push(task.labels?.map((l) => l.title).join(', ') ?? '');
@@ -426,7 +440,7 @@ function formatTaskTable(tasks: Task[]): string {
  * Render tasks grouped by project: a header per project (carrying the project
  * name, so it isn't repeated per row) followed by a compact task table.
  */
-function formatTasksGroupedByProject(tasks: Task[]): string {
+function formatTasksGroupedByProject(tasks: Task[], options?: TaskTableOptions): string {
   const groups = new Map<number, Task[]>();
   for (const task of tasks) {
     const pid = task.project_id ?? 0;
@@ -441,7 +455,7 @@ function formatTasksGroupedByProject(tasks: Task[]): string {
   const sections = Array.from(groups.entries()).map(([pid, group]) => {
     const name = group[0]?.project_title;
     const header = name ? `${name} (ID: ${pid})` : `Project ${pid}`;
-    return `### 📁 ${header} — ${group.length} task(s)\n\n${formatTaskTable(group)}`;
+    return `### 📁 ${header} — ${group.length} task(s)\n\n${formatTaskTable(group, options)}`;
   });
 
   return sections.join('\n') + '\n';
@@ -451,7 +465,11 @@ function formatTasksGroupedByProject(tasks: Task[]): string {
  * Format a collection with a full item render (up to a safety bound) and a
  * pagination/truncation footer so callers know when more results exist.
  */
-function formatCollection(collection: DataItem[], pagination?: PaginationInfo): string {
+function formatCollection(
+  collection: DataItem[],
+  pagination?: PaginationInfo,
+  taskOptions?: TaskTableOptions,
+): string {
   let out = `**Results:** ${collection.length} item(s)\n\n`;
   if (collection.length === 0) {
     return out;
@@ -464,7 +482,7 @@ function formatCollection(collection: DataItem[], pagination?: PaginationInfo): 
   // read as distinct areas.
   const tasks = asTaskList(shown);
   if (tasks) {
-    out += formatTasksGroupedByProject(tasks);
+    out += formatTasksGroupedByProject(tasks, taskOptions);
   } else {
     out += formatDataItems(shown);
   }

@@ -140,6 +140,8 @@ export interface Task {
   project_title?: string;
   /** Relative age of `updated` (e.g. "3mo ago"), populated on request */
   updated_relative?: string;
+  /** Kanban column (board-view bucket) title this task sits in */
+  bucket_title?: string;
 }
 
 export interface TaskReminder {

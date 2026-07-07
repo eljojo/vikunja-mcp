@@ -25,7 +25,16 @@ export interface TaskBucketRelation {
 
 export interface TaskBucket {
   id: number;
+  title?: string;
   tasks?: Task[];
+}
+
+/** Minimal project view shape. Vikunja reports the kind as `view_kind`. */
+export interface ProjectViewLite {
+  id: number;
+  project_id: number;
+  title: string;
+  view_kind: 'list' | 'kanban' | 'table' | 'gantt';
 }
 
 type TaskServiceWithBucketSupport = TaskService & {
@@ -39,6 +48,9 @@ type TaskServiceWithBucketSupport = TaskService & {
     projectId: number,
     viewId: number,
   ): Promise<TaskBucket[]>;
+  getProjectViews(
+    projectId: number,
+  ): Promise<ProjectViewLite[]>;
 };
 
 function hasRequestMethod(service: unknown): service is TaskServiceWithRequest {
@@ -103,6 +115,24 @@ export function applyTaskServiceCompatibility(service: unknown): void {
     undefined,
     { params: { page: 1, per_page: 500 } },
   );
+
+  service.getProjectViews = (
+    projectId: number,
+  ): Promise<ProjectViewLite[]> => service.request<ProjectViewLite[]>(
+    `/projects/${projectId}/views`,
+    'GET',
+  );
+}
+
+export function getProjectViews(
+  service: TaskService,
+  projectId: number,
+): Promise<ProjectViewLite[]> {
+  if (!('getProjectViews' in service) || typeof service.getProjectViews !== 'function') {
+    throw new Error('The Vikunja task service does not support reading project views');
+  }
+
+  return (service as TaskServiceWithBucketSupport).getProjectViews(projectId);
 }
 
 export function moveTaskToBucket(

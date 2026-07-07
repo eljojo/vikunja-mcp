@@ -18,7 +18,7 @@ import type { CreateTaskArgs, UpdateTaskArgs, DeleteTaskArgs, GetTaskArgs } from
 import { TaskFilteringOrchestrator } from './tasks/filtering/index';
 import { createAuthRequiredError, handleFetchError } from '../utils/error-handler';
 import { createSuccessResponse, formatMcpResponse } from '../utils/simple-response';
-import { getProjectNameMap, enrichTasksForDisplay } from '../utils/task-display-enrichment';
+import { getProjectNameMap, enrichTasksForDisplay, enrichTasksWithBucketTitles } from '../utils/task-display-enrichment';
 
 /**
  * Get session-scoped storage instance
@@ -57,10 +57,17 @@ async function listTasks(
 
     // Enrich with display-only fields: project name (so lists read as areas of
     // life, not opaque ids) and, on request, a relative "updated" stale signal.
+    // For a single-project ("zoom in") list, also resolve each task's kanban
+    // column — key to what the task means — which costs a couple of extra calls
+    // and so is skipped for cross-project reads.
+    const singleProject = args.projectId !== undefined && !args.allProjects;
     try {
       const client = await getClientFromContext();
       const projectNames = await getProjectNameMap(client);
       enrichTasksForDisplay(tasks, projectNames, { showUpdated: Boolean(args.showUpdated) });
+      if (singleProject) {
+        await enrichTasksWithBucketTitles(client.tasks, tasks);
+      }
     } catch (error) {
       logger.debug('Task display enrichment skipped', {
         error: error instanceof Error ? error.message : String(error),
@@ -73,7 +80,8 @@ async function listTasks(
     const response = createSuccessResponse(
       'list-tasks',
       `Found ${tasks.length} tasks${filteringMessage}`,
-      { tasks }, // already our Task interface (enriched above)
+      // Show the done column unless the query already pins done state.
+      { tasks, taskTableOptions: { showDone: args.done === undefined } },
       {
         count: tasks.length,
         filteringMethod: filteringMetadata.serverSideFilteringUsed ? 'server-side' :
