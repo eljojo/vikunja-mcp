@@ -85,6 +85,8 @@ export interface TaskListingArgs extends FilteringArgs {
   useAorp?: boolean;
   aorpConfig?: AorpBuilderConfig;
   sessionId?: string;
+  /** When true, include a relative "updated Xmo ago" stale signal per task */
+  showUpdated?: boolean;
 }
 
 /**

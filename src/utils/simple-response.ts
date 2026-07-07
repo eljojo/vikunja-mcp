@@ -227,13 +227,16 @@ export function formatErrorMessage(
 }
 
 /**
- * Format a single Task object with rich details
+ * Format a single Task object with rich details.
+ * When rendered under a project group header, pass showProject: false to
+ * avoid repeating the project on every task.
  */
-function formatTaskItem(task: Task, index: number): string {
+function formatTaskItem(task: Task, index: number, opts: { showProject?: boolean } = {}): string {
+  const { showProject = true } = opts;
   const parts: string[] = [];
 
-  // Header with title and ID
-  parts.push(`### ${index + 1}. **${task.title}** (ID: ${task.id})`);
+  // Header with title and ID (nested under a project group header)
+  parts.push(`#### ${index + 1}. **${task.title}** (ID: ${task.id})`);
 
   // Status
   const status = task.done ? '✅ Done' : '❌ Not Done';
@@ -255,14 +258,22 @@ function formatTaskItem(task: Task, index: number): string {
     parts.push(`- **Progress:** ${task.percent_done}%`);
   }
 
-  // Project ID (if set)
-  if (task.project_id) {
-    parts.push(`- **Project:** ${task.project_id}`);
+  // Project — name when resolved, else the bare id. Suppressed inside groups.
+  if (showProject && task.project_id) {
+    const project = task.project_title
+      ? `${task.project_title} (${task.project_id})`
+      : `${task.project_id}`;
+    parts.push(`- **Project:** ${project}`);
   }
 
   // Bucket (only when assigned; 0 means "no bucket").
   if (task.bucket_id !== undefined && task.bucket_id !== 0) {
     parts.push(`- **Bucket:** ${task.bucket_id}`);
+  }
+
+  // Relative "updated" stale signal (only present when requested via showUpdated).
+  if (task.updated_relative) {
+    parts.push(`- **Updated:** ${task.updated_relative}`);
   }
 
   // Labels (if any)
@@ -334,6 +345,63 @@ function htmlToPlainText(html: string): string {
 }
 
 /**
+ * Heuristic: does this item look like a Task (vs a project/label/plain item)?
+ */
+function isTaskItem(item: unknown): item is Task {
+  if (typeof item !== 'object' || item === null) {
+    return false;
+  }
+  const t = item as Task;
+  return (
+    Boolean(t.title) &&
+    (t.description !== undefined ||
+      t.priority !== undefined ||
+      t.due_date !== undefined ||
+      t.labels !== undefined ||
+      t.assignees !== undefined ||
+      t.done !== undefined)
+  );
+}
+
+/**
+ * Return the items typed as Task[] when every item is task-like, else null.
+ */
+function asTaskList(items: DataItem[]): Task[] | null {
+  if (items.length === 0) {
+    return null;
+  }
+  return items.every(isTaskItem) ? (items as unknown as Task[]) : null;
+}
+
+/**
+ * Render tasks grouped by project, with a header per project and the per-task
+ * project line suppressed (it lives in the header). Numbering restarts per group.
+ */
+function formatTasksGroupedByProject(tasks: Task[]): string {
+  const groups = new Map<number, Task[]>();
+  for (const task of tasks) {
+    const pid = task.project_id ?? 0;
+    const group = groups.get(pid);
+    if (group) {
+      group.push(task);
+    } else {
+      groups.set(pid, [task]);
+    }
+  }
+
+  const sections = Array.from(groups.entries()).map(([pid, group]) => {
+    const name = group[0]?.project_title;
+    const header = name ? `${name} (ID: ${pid})` : `Project ${pid}`;
+    const body = group
+      .map((task, i) => formatTaskItem(task, i, { showProject: false }))
+      .join('\n');
+    return `### 📁 ${header} — ${group.length} task(s)\n\n${body}`;
+  });
+
+  return sections.join('\n') + '\n';
+}
+
+/**
  * Format a collection with a full item render (up to a safety bound) and a
  * pagination/truncation footer so callers know when more results exist.
  */
@@ -344,7 +412,16 @@ function formatCollection(collection: DataItem[], pagination?: PaginationInfo): 
   }
 
   const shown = collection.slice(0, MAX_RENDERED_ITEMS);
-  out += formatDataItems(shown);
+
+  // Task lists render grouped under a project header (one group per project),
+  // so the project shows once instead of on every task and cross-project lists
+  // read as distinct areas.
+  const tasks = asTaskList(shown);
+  if (tasks) {
+    out += formatTasksGroupedByProject(tasks);
+  } else {
+    out += formatDataItems(shown);
+  }
 
   if (collection.length > MAX_RENDERED_ITEMS) {
     out +=

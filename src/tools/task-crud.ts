@@ -18,6 +18,7 @@ import type { CreateTaskArgs, UpdateTaskArgs, DeleteTaskArgs, GetTaskArgs } from
 import { TaskFilteringOrchestrator } from './tasks/filtering/index';
 import { createAuthRequiredError, handleFetchError } from '../utils/error-handler';
 import { createSuccessResponse, formatMcpResponse } from '../utils/simple-response';
+import { getProjectNameMap, enrichTasksForDisplay } from '../utils/task-display-enrichment';
 
 /**
  * Get session-scoped storage instance
@@ -51,8 +52,20 @@ async function listTasks(
       }
     }
 
-    const tasks = filteringResult.tasks || [];
+    const tasks = (filteringResult.tasks || []) as Task[];
     const metadata = filteringResult.metadata || {};
+
+    // Enrich with display-only fields: project name (so lists read as areas of
+    // life, not opaque ids) and, on request, a relative "updated" stale signal.
+    try {
+      const client = await getClientFromContext();
+      const projectNames = await getProjectNameMap(client);
+      enrichTasksForDisplay(tasks, projectNames, { showUpdated: Boolean(args.showUpdated) });
+    } catch (error) {
+      logger.debug('Task display enrichment skipped', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     // Type the filtering metadata properly
     const filteringMetadata = metadata;
@@ -60,7 +73,7 @@ async function listTasks(
     const response = createSuccessResponse(
       'list-tasks',
       `Found ${tasks.length} tasks${filteringMessage}`,
-      { tasks: tasks as Task[] }, // Convert from node-vikunja Task to our Task interface
+      { tasks }, // already our Task interface (enriched above)
       {
         count: tasks.length,
         filteringMethod: filteringMetadata.serverSideFilteringUsed ? 'server-side' :
@@ -129,6 +142,8 @@ export function registerTaskCrudTool(
       // List specific filters
       allProjects: z.boolean().optional(),
       done: z.boolean().optional(),
+      // Include a relative "updated Xmo ago" stale signal per task (off by default)
+      showUpdated: z.boolean().optional(),
       // Session ID for AORP response tracking
       sessionId: z.string().optional(),
     },

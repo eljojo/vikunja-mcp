@@ -135,6 +135,11 @@ export interface Task {
   created?: string;
   updated?: string;
   created_by?: User;
+  // Display-only fields injected by the list handler for rendering; not sent to the API.
+  /** Human-readable project name resolved from project_id */
+  project_title?: string;
+  /** Relative age of `updated` (e.g. "3mo ago"), populated on request */
+  updated_relative?: string;
 }
 
 export interface TaskReminder {
