@@ -10,7 +10,7 @@ import type {
 type TaskServiceWithRequest = TaskServiceWithBucketSupport & {
   request<T>(
     endpoint: string,
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     body?: unknown,
     options?: { params?: GetTasksParams }
   ): Promise<T>;
@@ -26,7 +26,18 @@ export interface TaskBucketRelation {
 export interface TaskBucket {
   id: number;
   title?: string;
+  position?: number;
+  limit?: number;
+  count?: number;
+  project_view_id?: number;
   tasks?: Task[];
+}
+
+/** Fields accepted when creating/updating a bucket. */
+export interface BucketInput {
+  title?: string;
+  position?: number;
+  limit?: number;
 }
 
 /** Minimal project view shape. Vikunja reports the kind as `view_kind`. */
@@ -35,6 +46,12 @@ export interface ProjectViewLite {
   project_id: number;
   title: string;
   view_kind: 'list' | 'kanban' | 'table' | 'gantt';
+  position?: number;
+  filter?: unknown;
+  bucket_configuration_mode?: string;
+  bucket_configuration?: unknown;
+  default_bucket_id?: number;
+  done_bucket_id?: number;
 }
 
 type TaskServiceWithBucketSupport = TaskService & {
@@ -51,6 +68,31 @@ type TaskServiceWithBucketSupport = TaskService & {
   getProjectViews(
     projectId: number,
   ): Promise<ProjectViewLite[]>;
+  getViewBuckets(
+    projectId: number,
+    viewId: number,
+  ): Promise<TaskBucket[]>;
+  createBucket(
+    projectId: number,
+    viewId: number,
+    bucket: BucketInput,
+  ): Promise<TaskBucket>;
+  updateBucket(
+    projectId: number,
+    viewId: number,
+    bucketId: number,
+    bucket: BucketInput,
+  ): Promise<TaskBucket>;
+  deleteBucket(
+    projectId: number,
+    viewId: number,
+    bucketId: number,
+  ): Promise<void>;
+  updateView(
+    projectId: number,
+    viewId: number,
+    view: ProjectViewLite,
+  ): Promise<ProjectViewLite>;
 };
 
 function hasRequestMethod(service: unknown): service is TaskServiceWithRequest {
@@ -122,6 +164,54 @@ export function applyTaskServiceCompatibility(service: unknown): void {
     `/projects/${projectId}/views`,
     'GET',
   );
+
+  service.getViewBuckets = (
+    projectId: number,
+    viewId: number,
+  ): Promise<TaskBucket[]> => service.request<TaskBucket[]>(
+    `/projects/${projectId}/views/${viewId}/buckets`,
+    'GET',
+  );
+
+  service.createBucket = (
+    projectId: number,
+    viewId: number,
+    bucket: BucketInput,
+  ): Promise<TaskBucket> => service.request<TaskBucket>(
+    `/projects/${projectId}/views/${viewId}/buckets`,
+    'PUT',
+    bucket,
+  );
+
+  service.updateBucket = (
+    projectId: number,
+    viewId: number,
+    bucketId: number,
+    bucket: BucketInput,
+  ): Promise<TaskBucket> => service.request<TaskBucket>(
+    `/projects/${projectId}/views/${viewId}/buckets/${bucketId}`,
+    'POST',
+    bucket,
+  );
+
+  service.deleteBucket = (
+    projectId: number,
+    viewId: number,
+    bucketId: number,
+  ): Promise<void> => service.request<unknown>(
+    `/projects/${projectId}/views/${viewId}/buckets/${bucketId}`,
+    'DELETE',
+  ).then(() => undefined);
+
+  service.updateView = (
+    projectId: number,
+    viewId: number,
+    view: ProjectViewLite,
+  ): Promise<ProjectViewLite> => service.request<ProjectViewLite>(
+    `/projects/${projectId}/views/${viewId}`,
+    'POST',
+    view,
+  );
 }
 
 export function getProjectViews(
@@ -133,6 +223,58 @@ export function getProjectViews(
   }
 
   return (service as TaskServiceWithBucketSupport).getProjectViews(projectId);
+}
+
+function asBucketService(service: TaskService): TaskServiceWithBucketSupport {
+  if (!('createBucket' in service) || typeof service.createBucket !== 'function') {
+    throw new Error('The Vikunja task service does not support bucket management');
+  }
+  return service as TaskServiceWithBucketSupport;
+}
+
+export function getViewBuckets(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+): Promise<TaskBucket[]> {
+  return asBucketService(service).getViewBuckets(projectId, viewId);
+}
+
+export function createBucket(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+  bucket: BucketInput,
+): Promise<TaskBucket> {
+  return asBucketService(service).createBucket(projectId, viewId, bucket);
+}
+
+export function updateBucket(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+  bucketId: number,
+  bucket: BucketInput,
+): Promise<TaskBucket> {
+  return asBucketService(service).updateBucket(projectId, viewId, bucketId, bucket);
+}
+
+export function deleteBucket(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+  bucketId: number,
+): Promise<void> {
+  return asBucketService(service).deleteBucket(projectId, viewId, bucketId);
+}
+
+export function updateView(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+  view: ProjectViewLite,
+): Promise<ProjectViewLite> {
+  return asBucketService(service).updateView(projectId, viewId, view);
 }
 
 export function moveTaskToBucket(

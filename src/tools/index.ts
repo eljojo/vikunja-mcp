@@ -25,6 +25,7 @@ import { registerTaskRemindersTool } from './task-reminders';
 import { registerTaskLabelsTool } from './task-labels';
 import { registerTaskRelationsTool } from './task-relations';
 import { registerProjectsTool } from './projects/index';
+import { registerKanbanTool } from './kanban';
 import { registerLabelsTool } from './labels';
 import { registerTeamsTool } from './teams';
 import { registerUsersTool } from './users';
@@ -80,6 +81,7 @@ export function registerTools(
   // Only register tools that require clientFactory if it's available
   if (clientFactory) {
     registerProjectsTool(server, authManager, clientFactory);
+    registerKanbanTool(server, authManager, clientFactory);
     registerLabelsTool(server, authManager, clientFactory);
     registerTeamsTool(server, authManager, clientFactory);
 
