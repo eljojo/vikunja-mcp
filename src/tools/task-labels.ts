@@ -12,7 +12,7 @@ import { MCPError, ErrorCode } from '../types';
 import { getClientFromContext, setGlobalClientFactory } from '../client';
 import { logger } from '../utils/logger';
 import { createAuthRequiredError } from '../utils/error-handler';
-import { applyLabels, removeLabels, listTaskLabels } from '../tools/tasks/labels';
+import { applyLabels, removeLabels, listTaskLabels, bulkTaskLabels } from '../tools/tasks/labels';
 
 /**
  * Register task labels tool
@@ -24,11 +24,13 @@ export function registerTaskLabelsTool(
 ): void {
   server.tool(
     'vikunja_task_labels',
-    'Manage task labels: apply, remove, list labels',
+    'Manage task labels: apply, remove, list labels; bulk-apply/remove across many tasks',
     {
-      operation: z.enum(['apply-label', 'remove-label', 'list-labels']),
-      // Task and label identification
-      id: z.number(),
+      operation: z.enum(['apply-label', 'remove-label', 'list-labels', 'bulk-apply-label', 'bulk-remove-label']),
+      // Task and label identification. `id` targets a single task; `taskIds` targets many
+      // for the bulk operations.
+      id: z.number().optional(),
+      taskIds: z.array(z.number()).optional(),
       labels: z.array(z.number()).optional(),
     },
     async (args) => {
@@ -63,6 +65,14 @@ export function registerTaskLabelsTool(
 
           case 'list-labels':
             return listTaskLabels(args);
+
+          case 'bulk-apply-label':
+          case 'bulk-remove-label':
+            return bulkTaskLabels({
+              operation: args.operation,
+              taskIds: args.taskIds || [],
+              labels: args.labels || [],
+            });
 
           default:
             throw new MCPError(

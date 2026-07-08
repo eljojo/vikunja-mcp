@@ -15,7 +15,7 @@ import { getTaskWithRelationships } from './relationship-verification';
  * Add labels to a task
  */
 export async function applyLabels(args: {
-  id?: number;
+  id?: number | undefined;
   labels?: number[];
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
@@ -131,7 +131,7 @@ function relationshipOperationError(
  * Remove labels from a task
  */
 export async function removeLabels(args: {
-  id?: number;
+  id?: number | undefined;
   labels?: number[];
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
@@ -199,11 +199,98 @@ export async function removeLabels(args: {
   }
 }
 
+/** Merge labels into a single task (union with its current labels). */
+async function applyLabelsToTask(
+  client: Awaited<ReturnType<typeof getClientFromContext>>,
+  taskId: number,
+  labelIds: number[],
+): Promise<void> {
+  const currentTask = await client.tasks.getTask(taskId);
+  const currentLabelIds = currentTask.labels
+    ?.map((label) => label.id)
+    .filter((id): id is number => id !== undefined) ?? [];
+  const finalLabelIds = [...new Set([...currentLabelIds, ...labelIds])];
+  await withRetry(() => client.tasks.updateTaskLabels(taskId, { label_ids: finalLabelIds }), {
+    ...RETRY_CONFIG.AUTH_ERRORS,
+    shouldRetry: (error: unknown) => isAuthenticationError(error),
+  });
+}
+
+/** Remove labels from a single task. */
+async function removeLabelsFromTask(
+  client: Awaited<ReturnType<typeof getClientFromContext>>,
+  taskId: number,
+  labelIds: number[],
+): Promise<void> {
+  for (const labelId of labelIds) {
+    await withRetry(() => client.tasks.removeLabelFromTask(taskId, labelId), {
+      ...RETRY_CONFIG.AUTH_ERRORS,
+      shouldRetry: (error: unknown) => isAuthenticationError(error),
+    });
+  }
+}
+
+/**
+ * Apply or remove labels across many tasks in one call. Continues past per-task
+ * failures and reports a summary (used for label-migration workflows, e.g. tagging
+ * many tasks `shopping`). Vikunja has no batch label endpoint, so this makes one call
+ * per task.
+ */
+export async function bulkTaskLabels(args: {
+  operation: 'bulk-apply-label' | 'bulk-remove-label';
+  taskIds?: number[];
+  labels?: number[];
+}): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { taskIds, labels } = args;
+  const apply = args.operation === 'bulk-apply-label';
+
+  if (!taskIds || taskIds.length === 0) {
+    throw new MCPError(ErrorCode.VALIDATION_ERROR, 'At least one task id is required');
+  }
+  if (!labels || labels.length === 0) {
+    throw new MCPError(ErrorCode.VALIDATION_ERROR, 'At least one label id is required');
+  }
+  taskIds.forEach((id) => validateId(id, 'task ID'));
+  labels.forEach((id) => validateId(id, 'label ID'));
+
+  const client = await getClientFromContext();
+
+  const results: Array<{ taskId: number; ok: boolean; error?: string }> = [];
+  for (const taskId of taskIds) {
+    try {
+      if (apply) {
+        await applyLabelsToTask(client, taskId, labels);
+      } else {
+        await removeLabelsFromTask(client, taskId, labels);
+      }
+      results.push({ taskId, ok: true });
+    } catch (error) {
+      results.push({ taskId, ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const succeeded = results.filter((r) => r.ok).length;
+  const failed = results.length - succeeded;
+  const verb = apply ? 'Applied' : 'Removed';
+  const preposition = apply ? 'to' : 'from';
+
+  const response = createSimpleResponse(
+    args.operation,
+    `${verb} ${labels.length} label${labels.length > 1 ? 's' : ''} ${preposition} ${succeeded}/${taskIds.length} task${taskIds.length > 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+    { results },
+    { metadata: { succeeded, failed, affectedFields: ['labels'] } },
+  );
+
+  return {
+    content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }],
+  };
+}
+
 /**
  * List labels of a task
  */
 export async function listTaskLabels(args: {
-  id?: number;
+  id?: number | undefined;
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
     if (args.id === undefined) {

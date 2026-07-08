@@ -1,4 +1,4 @@
-import { applyLabels, removeLabels, listTaskLabels } from '../../../src/tools/tasks/labels';
+import { applyLabels, removeLabels, listTaskLabels, bulkTaskLabels } from '../../../src/tools/tasks/labels';
 import { getClientFromContext } from '../../../src/client';
 import { MCPError, ErrorCode } from '../../../src/types/index';
 
@@ -168,6 +168,65 @@ describe('Label operations', () => {
 
     it('should handle undefined task id', async () => {
       await expect(listTaskLabels({ id: undefined })).rejects.toThrow(MCPError);
+    });
+  });
+
+  describe('bulkTaskLabels', () => {
+    it('applies a label across many tasks and reports full success', async () => {
+      mockClient.tasks.getTask.mockResolvedValue({ id: 0, title: 't', labels: [] });
+      mockClient.tasks.updateTaskLabels.mockResolvedValue({});
+
+      const result = await bulkTaskLabels({
+        operation: 'bulk-apply-label',
+        taskIds: [1, 2, 3],
+        labels: [5],
+      });
+
+      expect(mockClient.tasks.updateTaskLabels).toHaveBeenCalledTimes(3);
+      expect(mockClient.tasks.updateTaskLabels).toHaveBeenCalledWith(2, { label_ids: [5] });
+      expect(result.content[0].text).toContain('Applied 1 label to 3/3 tasks');
+    });
+
+    it('continues past a per-task failure and reports it', async () => {
+      mockClient.tasks.updateTaskLabels.mockResolvedValue({});
+      mockClient.tasks.getTask.mockImplementation(async (id: number) => {
+        if (id === 2) throw new Error('task does not exist');
+        return { id, title: 't', labels: [] };
+      });
+
+      const result = await bulkTaskLabels({
+        operation: 'bulk-apply-label',
+        taskIds: [1, 2, 3],
+        labels: [5],
+      });
+
+      expect(result.content[0].text).toContain('Applied 1 label to 2/3 tasks, 1 failed');
+    });
+
+    it('removes labels across many tasks', async () => {
+      mockClient.tasks.removeLabelFromTask.mockResolvedValue({});
+
+      const result = await bulkTaskLabels({
+        operation: 'bulk-remove-label',
+        taskIds: [1, 2],
+        labels: [5, 6],
+      });
+
+      // 2 tasks x 2 labels = 4 removal calls
+      expect(mockClient.tasks.removeLabelFromTask).toHaveBeenCalledTimes(4);
+      expect(result.content[0].text).toContain('Removed 2 labels from 2/2 tasks');
+    });
+
+    it('throws when no task ids are given', async () => {
+      await expect(
+        bulkTaskLabels({ operation: 'bulk-apply-label', taskIds: [], labels: [5] }),
+      ).rejects.toThrow(MCPError);
+    });
+
+    it('throws when no labels are given', async () => {
+      await expect(
+        bulkTaskLabels({ operation: 'bulk-apply-label', taskIds: [1], labels: [] }),
+      ).rejects.toThrow(MCPError);
     });
   });
 });
