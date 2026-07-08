@@ -18,16 +18,24 @@ export const MAX_PROJECT_DEPTH = 10;
 export const validateId = validateSharedId;
 
 /**
- * Validates that a hex color is in the correct format (#RRGGBB)
+ * Validates that a hex color is 6 hex digits, with an optional leading '#'
  */
 export function validateHexColor(hexColor: string): void {
-  // Validates hex color in format #RRGGBB (6 hex digits)
-  if (!/^#[0-9A-Fa-f]{6}$/.test(hexColor)) {
+  // Vikunja stores hex colors bare but accepts a leading '#'; allow either on input.
+  if (!/^#?[0-9A-Fa-f]{6}$/.test(hexColor)) {
     throw new MCPError(
       ErrorCode.VALIDATION_ERROR,
-      'Invalid hex color format. Expected format: #RRGGBB (e.g., #4287f5, #FF0000, #00ff00)',
+      'Invalid hex color format. Expected 6 hex digits with an optional leading "#" (e.g. 4287f5, #FF0000, 00ff00)',
     );
   }
+}
+
+/**
+ * Normalizes a hex color to lowercase with a leading '#' (the format Vikunja accepts)
+ */
+export function normalizeHexColor(hexColor: string): string {
+  const lower = hexColor.toLowerCase();
+  return lower.startsWith('#') ? lower : `#${lower}`;
 }
 
 /**

@@ -17,6 +17,12 @@ import { formatAorpAsMarkdown } from '../utils/response-factory';
 
 // Use shared validateAndConvertId from utils/validation
 
+// Vikunja stores hex colors bare but accepts a leading '#'. Normalize user input
+// to the '#'-prefixed form so bare-hex input (e.g. "16a34a") is accepted too.
+function normalizeHexColor(hexColor: string): string {
+  return hexColor.startsWith('#') ? hexColor : `#${hexColor}`;
+}
+
 export function registerLabelsTool(server: McpServer, authManager: AuthManager, _clientFactory?: VikunjaClientFactory): void {
   server.tool(
     'vikunja_labels',
@@ -38,7 +44,10 @@ export function registerLabelsTool(server: McpServer, authManager: AuthManager, 
       description: z.string().optional(),
       hexColor: z
         .string()
-        .regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color format')
+        .regex(
+          /^#?[0-9A-Fa-f]{6}$/,
+          'Invalid hex color format. Expected 6 hex digits with an optional leading "#" (e.g. "16a34a" or "#16a34a")',
+        )
         .optional(),
     },
     async (args) => {
@@ -116,7 +125,7 @@ export function registerLabelsTool(server: McpServer, authManager: AuthManager, 
               title: args.title,
             };
             if (args.description) labelData.description = args.description;
-            if (args.hexColor) labelData.hex_color = args.hexColor;
+            if (args.hexColor) labelData.hex_color = normalizeHexColor(args.hexColor);
 
             const label = await client.labels.createLabel(labelData as Label);
 
@@ -153,7 +162,7 @@ export function registerLabelsTool(server: McpServer, authManager: AuthManager, 
             const updates: Partial<Label> = {};
             if (args.title) updates.title = args.title;
             if (args.description !== undefined) updates.description = args.description;
-            if (args.hexColor) updates.hex_color = args.hexColor;
+            if (args.hexColor) updates.hex_color = normalizeHexColor(args.hexColor);
 
             const label = await client.labels.updateLabel(args.id, updates as Label);
 

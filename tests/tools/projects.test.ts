@@ -404,6 +404,8 @@ describe('Projects Tool', () => {
           { input: '#123456', expected: '#123456' },
           { input: '#abcdef', expected: '#abcdef' },
           { input: '#ABCDEF', expected: '#abcdef' },
+          { input: '4287f5', expected: '#4287f5' }, // bare hex, normalized with leading #
+          { input: 'FF0000', expected: '#ff0000' }, // bare hex, uppercased
         ];
 
         for (const { input, expected } of validColors) {
@@ -416,14 +418,15 @@ describe('Projects Tool', () => {
       });
 
       it('should reject invalid hex colors', async () => {
+        const err = 'Invalid hex color format. Expected 6 hex digits';
         const invalidColors = [
-          { color: '#fff', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#12345', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#GGGGGG', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '4287f5', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#1234567', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: 'red', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#12345g', error: 'Invalid hex color format. Expected format: #RRGGBB' },
+          { color: '#fff', error: err },
+          { color: '#12345', error: err },
+          { color: '#GGGGGG', error: err },
+          { color: '12345', error: err }, // bare, too short
+          { color: '#1234567', error: err },
+          { color: 'red', error: err },
+          { color: '#12345g', error: err },
         ];
 
         for (const { color, error } of invalidColors) {
@@ -623,6 +626,8 @@ describe('Projects Tool', () => {
           { input: '#123456', expected: '#123456' },
           { input: '#abcdef', expected: '#abcdef' },
           { input: '#ABCDEF', expected: '#abcdef' },
+          { input: '4287f5', expected: '#4287f5' }, // bare hex, normalized with leading #
+          { input: 'FF0000', expected: '#ff0000' }, // bare hex, uppercased
         ];
 
         for (const { input, expected } of validColors) {
@@ -638,14 +643,15 @@ describe('Projects Tool', () => {
       });
 
       it('should reject invalid hex colors in update', async () => {
+        const err = 'Invalid hex color format. Expected 6 hex digits';
         const invalidColors = [
-          { color: '#fff', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#12345', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#GGGGGG', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '4287f5', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#1234567', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: 'red', error: 'Invalid hex color format. Expected format: #RRGGBB' },
-          { color: '#12345g', error: 'Invalid hex color format. Expected format: #RRGGBB' },
+          { color: '#fff', error: err },
+          { color: '#12345', error: err },
+          { color: '#GGGGGG', error: err },
+          { color: '12345', error: err }, // bare, too short
+          { color: '#1234567', error: err },
+          { color: 'red', error: err },
+          { color: '#12345g', error: err },
         ];
 
         for (const { color, error } of invalidColors) {

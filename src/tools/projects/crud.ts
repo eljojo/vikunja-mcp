@@ -7,7 +7,7 @@ import type { Project, ProjectListParams } from 'node-vikunja';
 import { MCPError, ErrorCode, type CreateProjectRequest, type UpdateProjectRequest } from '../../types';
 import { getClientFromContext } from '../../client';
 import { transformApiError, handleStatusCodeError } from '../../utils/error-handler';
-import { validateId, validateHexColor, validateProjectData, calculateProjectDepth } from './validation';
+import { validateId, validateHexColor, normalizeHexColor, validateProjectData, calculateProjectDepth } from './validation';
 import { createProjectResponse, createProjectListResponse } from './response-formatter';
 import { formatAorpAsMarkdown } from '../../utils/response-factory';
 
@@ -273,7 +273,7 @@ export async function createProject(
     // Normalize hex color if provided
     let normalizedColor = hexColor;
     if (hexColor) {
-      normalizedColor = hexColor.toLowerCase();
+      normalizedColor = normalizeHexColor(hexColor);
     }
 
     // Build projectData object, only including defined properties to satisfy exactOptionalPropertyTypes
@@ -430,7 +430,7 @@ export async function updateProject(
         ? isArchived
         : (currentProject.is_archived ?? false),
       hex_color: hexColor !== undefined
-        ? hexColor.toLowerCase()
+        ? normalizeHexColor(hexColor)
         : (currentProject.hex_color ?? ''),
     };
 

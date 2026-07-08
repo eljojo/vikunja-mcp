@@ -310,6 +310,26 @@ describe('Labels Tool', () => {
       expect(markdown).toContain('Label "Priority" created successfully');
     });
 
+    it('should accept a bare-hex color and normalize it with a leading #', async () => {
+      const mockLabel = {
+        id: 1,
+        title: 'Shopping',
+        hex_color: '16a34a',
+      };
+      mockClient.labels.createLabel.mockResolvedValue(mockLabel);
+
+      await mockHandler({
+        subcommand: 'create',
+        title: 'Shopping',
+        hexColor: '16a34a',
+      });
+
+      expect(mockClient.labels.createLabel).toHaveBeenCalledWith({
+        title: 'Shopping',
+        hex_color: '#16a34a',
+      });
+    });
+
     it('should validate hex color format', async () => {
       // Test invalid hex color by checking the error at runtime
       // The schema validation will prevent invalid hex colors
@@ -408,6 +428,25 @@ describe('Labels Tool', () => {
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
       expect(markdown).toContain('Label "Complete Update" updated successfully');
+    });
+
+    it('should accept a bare-hex color on update and normalize it with a leading #', async () => {
+      const mockLabel = {
+        id: 1,
+        title: 'Label',
+        hex_color: '0000ff',
+      };
+      mockClient.labels.updateLabel.mockResolvedValue(mockLabel);
+
+      await mockHandler({
+        subcommand: 'update',
+        id: 1,
+        hexColor: '0000ff',
+      });
+
+      expect(mockClient.labels.updateLabel).toHaveBeenCalledWith(1, {
+        hex_color: '#0000ff',
+      });
     });
 
     it('should allow clearing description', async () => {

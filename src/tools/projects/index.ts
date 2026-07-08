@@ -79,7 +79,13 @@ export function registerProjectsTool(
       description: z.string().optional(),
       parentProjectId: z.coerce.number().positive().nullable().optional(),
       isArchived: z.boolean().optional(),
-      hexColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      hexColor: z
+        .string()
+        .regex(
+          /^#?[0-9A-Fa-f]{6}$/,
+          'Invalid hex color format. Expected 6 hex digits with an optional leading "#" (e.g. "4287f5" or "#4287f5")',
+        )
+        .optional(),
       page: z.number().min(1).optional(),
       perPage: z.number().min(1).max(100).optional(),
       search: z.string().optional(),
@@ -265,7 +271,13 @@ export function registerProjectTools(
       description: z.string().optional(),
       parentProjectId: z.number().positive().nullable().optional(),
       isArchived: z.boolean().optional(),
-      hexColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+      hexColor: z
+        .string()
+        .regex(
+          /^#?[0-9A-Fa-f]{6}$/,
+          'Invalid hex color format. Expected 6 hex digits with an optional leading "#" (e.g. "4287f5" or "#4287f5")',
+        )
+        .optional(),
       page: z.number().min(1).optional(),
       perPage: z.number().min(1).max(100).optional(),
       search: z.string().optional(),
