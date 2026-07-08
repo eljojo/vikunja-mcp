@@ -125,6 +125,10 @@ describe('Tasks Tool', () => {
         bulkAssignUsersToTask: jest.fn(),
         removeUserFromTask: jest.fn(),
         bulkUpdateTasks: jest.fn(),
+        // Kanban placement endpoints used when a task is created with a bucket.
+        getProjectViews: jest.fn(),
+        moveTaskToBucket: jest.fn(),
+        getBucketsForView: jest.fn(),
       },
       projects: {
         getProjects: jest.fn(),
@@ -382,8 +386,14 @@ describe('Tasks Tool', () => {
       });
       mockClient.tasks.updateTaskLabels.mockResolvedValue(undefined);
       mockClient.tasks.bulkAssignUsersToTask.mockResolvedValue(undefined);
+      // bucketId: 1 now triggers Kanban placement after create.
+      mockClient.tasks.getProjectViews.mockResolvedValue([{ id: 1, view_kind: 'kanban' }]);
+      mockClient.tasks.moveTaskToBucket.mockResolvedValue({});
+      mockClient.tasks.getBucketsForView.mockResolvedValue([{ id: 1, tasks: [{ id: 1 }] }]);
 
       await callTool('create', fullTask);
+
+      expect(mockClient.tasks.moveTaskToBucket).toHaveBeenCalledWith(1, 1, 1, 1);
 
       expect(mockClient.tasks.createTask).toHaveBeenCalledWith(
         1,

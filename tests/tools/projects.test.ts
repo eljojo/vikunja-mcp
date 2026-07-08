@@ -262,6 +262,15 @@ describe('Projects Tool', () => {
       expect(markdown).toContain('Retrieved project: Test Project');
     });
 
+    it('accepts projectId as an alias for id', async () => {
+      mockClient.projects.getProject.mockResolvedValue(mockProject);
+
+      const result = await callTool('get', { projectId: 1 });
+
+      expect(mockClient.projects.getProject).toHaveBeenCalledWith(1);
+      expect(result.content[0].text).toContain('Retrieved project: Test Project');
+    });
+
     it('should require project ID', async () => {
       await expect(callTool('get')).rejects.toThrow('Project ID is required');
     });
@@ -876,6 +885,17 @@ describe('Projects Tool', () => {
       });
     });
 
+    it('accepts id as an alias for projectId', async () => {
+      mockClient.projects.createLinkShare.mockResolvedValue(mockShare);
+
+      await callTool('create-share', { id: 1, right: 'read' });
+
+      expect(mockClient.projects.createLinkShare).toHaveBeenCalledWith(1, {
+        project_id: 1,
+        right: 0,
+      });
+    });
+
     it('should create a share with custom permissions', async () => {
       mockClient.projects.createLinkShare.mockResolvedValue({ ...mockShare, right: 2 });
 
@@ -1402,14 +1422,33 @@ describe('Projects Tool', () => {
       expect(markdown).toContain('Project 2');
     });
 
-    it('should require project ID', async () => {
+    it('should return the whole forest when no id is given', async () => {
       mockAuthManager.isAuthenticated.mockReturnValue(true);
-      await expect(callTool('get-tree')).rejects.toThrow('id must be a positive integer');
+      const projects = [
+        { ...mockProject, id: 1, title: 'Root A', parent_project_id: undefined },
+        { ...mockProject, id: 2, title: 'Child', parent_project_id: 1 },
+        { ...mockProject, id: 3, title: 'Root B', parent_project_id: undefined },
+      ];
+      mockClient.projects.getProjects.mockResolvedValueOnce(projects);
+
+      const result = await callTool('get-tree');
+      const markdown = result.content[0].text;
+      expect(markdown).toContain('## ✅ Success');
+      expect(markdown).toContain('Retrieved project tree with 3 nodes at depth 1');
     });
 
-    it('should validate project ID', async () => {
+    it('treats id 0 as no id and returns the forest', async () => {
       mockAuthManager.isAuthenticated.mockReturnValue(true);
-      await expect(callTool('get-tree', { id: 0 })).rejects.toThrow('id must be a positive integer');
+      const projects = [
+        { ...mockProject, id: 1, title: 'Root A', parent_project_id: undefined },
+        { ...mockProject, id: 3, title: 'Root B', parent_project_id: undefined },
+      ];
+      mockClient.projects.getProjects.mockResolvedValueOnce(projects);
+
+      const result = await callTool('get-tree', { id: 0 });
+      const markdown = result.content[0].text;
+      expect(markdown).toContain('## ✅ Success');
+      expect(markdown).toContain('Retrieved project tree with 2 nodes at depth 0');
     });
 
     it('should handle project not found', async () => {

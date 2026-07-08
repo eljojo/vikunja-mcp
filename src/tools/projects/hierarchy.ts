@@ -132,10 +132,9 @@ export async function getProjectTree(
 ): Promise<McpResponse> {
   const { id, maxDepth = 10, includeArchived = false, verbosity, useOptimizedFormat, useAorp } = args;
 
-  // Validate that project ID is provided for tree operations
-  if (!id) {
-    throw new MCPError(ErrorCode.VALIDATION_ERROR, 'id must be a positive integer');
-  }
+  // With no id, return the whole forest (all root projects and their subtrees)
+  // in one call; the branch below already handles both the single-root and
+  // no-id cases.
 
   try {
     const client = await getClientFromContext();

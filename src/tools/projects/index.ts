@@ -106,6 +106,16 @@ export function registerProjectsTool(
         await setGlobalClientFactory(clientFactory);
       }
 
+      // `id` and `projectId` are interchangeable aliases: single-project
+      // subcommands read `id`, sharing subcommands read `projectId`, and the
+      // schema advertises both. Mirror whichever the caller supplied so passing
+      // the "wrong" one no longer fails with "Project ID is required".
+      if (args.id === undefined && args.projectId !== undefined) {
+        args.id = args.projectId;
+      } else if (args.projectId === undefined && args.id !== undefined) {
+        args.projectId = args.id;
+      }
+
       try {
         const result = await (async (): Promise<McpResponse> => {
           switch (args.subcommand) {

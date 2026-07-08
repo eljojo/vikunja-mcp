@@ -5,7 +5,12 @@
 
 import { MCPError, ErrorCode } from '../../../types';
 import { getClientFromContext } from '../../../client';
-import type { Task, VikunjaClient } from 'node-vikunja';
+import type { Task, TaskService, VikunjaClient } from 'node-vikunja';
+import {
+  getProjectViews,
+  getBucketsForView,
+  moveTaskToBucket,
+} from '../../../client/applyTaskServiceCompatibility';
 import { logger } from '../../../utils/logger';
 import { isAuthenticationError } from '../../../utils/auth-error-handler';
 import { RETRY_CONFIG } from '../../../utils/retry';
@@ -27,6 +32,13 @@ export interface CreateTaskArgs {
   assignees?: number[];
   repeatAfter?: number;
   repeatMode?: 'day' | 'week' | 'month' | 'year';
+  // Kanban placement: which column the new task should land in. Vikunja ignores
+  // a bucket id supplied at creation time, so this is applied via a follow-up
+  // move. viewId is optional and defaults to the project's Kanban view.
+  bucketId?: number;
+  bucket_id?: number;
+  viewId?: number;
+  view_id?: number;
   // Session ID for AORP response tracking
   sessionId?: string;
 }
@@ -134,6 +146,21 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
       // The rollback function will re-throw the original error with context
     }
 
+    // Place the task in a specific Kanban column if requested. Done after the
+    // task exists (create ignores a bucket id) and outside the rollback block:
+    // a placement failure is reported loudly but the created task is preserved
+    // in its default column rather than deleted.
+    const requestedBucketId = args.bucketId ?? args.bucket_id;
+    if (requestedBucketId !== undefined && createdTask.id !== undefined && args.projectId !== undefined) {
+      await placeTaskInBucket(
+        client,
+        args.projectId,
+        requestedBucketId,
+        createdTask.id,
+        args.viewId ?? args.view_id,
+      );
+    }
+
     const response = createTaskResponse(
       'create-task',
       'Task created successfully',
@@ -183,6 +210,60 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
     // Use standardized error transformation for all other errors
     throw transformApiError(error, 'Failed to create task');
   }
+}
+
+/**
+ * Move a freshly created task into a specific Kanban bucket. Vikunja ignores a
+ * bucket id supplied on task creation, so we create first and then move via the
+ * bucket-tasks endpoint (the same verified path the kanban tool uses), then
+ * re-read the board to confirm the task actually landed — placement has been
+ * silently dropped before.
+ */
+async function placeTaskInBucket(
+  client: VikunjaClient,
+  projectId: number,
+  bucketId: number,
+  taskId: number,
+  viewId: number | undefined,
+): Promise<void> {
+  const service = client.tasks;
+  const resolvedViewId = viewId ?? (await resolveKanbanViewId(service, projectId));
+
+  try {
+    await moveTaskToBucket(service, projectId, resolvedViewId, bucketId, taskId);
+  } catch (error) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId} was created in project ${projectId} but could not be moved to bucket ${bucketId}: ` +
+        `${error instanceof Error ? error.message : String(error)}. It remains in the default column.`,
+    );
+  }
+
+  // Confirm the move took. A read failure here is best-effort (the move call
+  // itself succeeded), but a read that shows the task elsewhere is a real
+  // silent-drop and must surface.
+  let landed: boolean;
+  try {
+    const buckets = await getBucketsForView(service, projectId, resolvedViewId);
+    landed = buckets.some((b) => b.id === bucketId && (b.tasks ?? []).some((t) => t.id === taskId));
+  } catch {
+    return;
+  }
+  if (!landed) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId} was created but did not land in bucket ${bucketId} after the move. It remains in the default column.`,
+    );
+  }
+}
+
+async function resolveKanbanViewId(service: TaskService, projectId: number): Promise<number> {
+  const views = (await getProjectViews(service, projectId)) ?? [];
+  const kanban = views.find((v) => v.view_kind === 'kanban');
+  if (!kanban) {
+    throw new MCPError(ErrorCode.NOT_FOUND, `Project ${projectId} has no Kanban view`);
+  }
+  return kanban.id;
 }
 
 function verifyRequestedRelationships(task: Task, args: CreateTaskArgs): void {

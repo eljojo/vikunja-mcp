@@ -379,25 +379,29 @@ export function registerKanbanTool(
           }
 
           case 'move-task': {
-            if (args.taskId === undefined || args.bucketId === undefined) {
-              throw new MCPError(ErrorCode.VALIDATION_ERROR, 'taskId and bucketId are required to move a task');
+            // `intoBucketId` is accepted as an alias for `bucketId` so callers
+            // that use the delete-bucket relocation key don't silently fail here.
+            const destBucketId = args.bucketId ?? args.intoBucketId;
+            if (args.taskId === undefined || destBucketId === undefined) {
+              throw new MCPError(ErrorCode.VALIDATION_ERROR, 'taskId and bucketId (or intoBucketId) are required to move a task');
             }
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            const result = await moveTasks(service, projectId, viewId, [args.taskId], args.bucketId);
+            const result = await moveTasks(service, projectId, viewId, [args.taskId], destBucketId);
             if (result.failed.length > 0) {
               throw new MCPError(ErrorCode.INTERNAL_ERROR, `Move failed: task ${args.taskId} — ${result.failed[0]?.reason}`);
             }
-            return text(`Moved task ${args.taskId} to column ${args.bucketId} (verified)`);
+            return text(`Moved task ${args.taskId} to column ${destBucketId} (verified)`);
           }
 
           case 'bulk-move': {
-            if (!args.taskIds || args.taskIds.length === 0 || args.bucketId === undefined) {
-              throw new MCPError(ErrorCode.VALIDATION_ERROR, 'taskIds and bucketId are required for bulk-move');
+            const destBucketId = args.bucketId ?? args.intoBucketId;
+            if (!args.taskIds || args.taskIds.length === 0 || destBucketId === undefined) {
+              throw new MCPError(ErrorCode.VALIDATION_ERROR, 'taskIds and bucketId (or intoBucketId) are required for bulk-move');
             }
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            const result = await moveTasks(service, projectId, viewId, args.taskIds, args.bucketId);
+            const result = await moveTasks(service, projectId, viewId, args.taskIds, destBucketId);
             const summary =
-              `Moved ${result.moved.length}/${args.taskIds.length} task(s) to column ${args.bucketId} (verified).`;
+              `Moved ${result.moved.length}/${args.taskIds.length} task(s) to column ${destBucketId} (verified).`;
             const failReport =
               result.failed.length > 0
                 ? `\n\nFailed (${result.failed.length}):\n` +

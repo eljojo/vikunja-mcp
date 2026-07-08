@@ -269,8 +269,15 @@ describe('Projects Tool - Nested Project Features', () => {
       );
     });
 
-    it('should require project ID', async () => {
-      await expect(callTool('get-tree')).rejects.toThrow('id must be a positive integer');
+    it('should return the whole forest when no id is given', async () => {
+      mockClient.projects.getProjects.mockResolvedValue(mockProjects);
+
+      const result = await callTool('get-tree');
+      const markdown = result.content[0].text;
+
+      expect(markdown).toContain('## ✅ Success');
+      // Both roots (1 and 5) and their subtrees: 5 nodes total, deepest at 2.
+      expect(markdown).toContain('Retrieved project tree with 5 nodes at depth 2');
     });
   });
 
