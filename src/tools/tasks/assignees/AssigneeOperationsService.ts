@@ -21,7 +21,7 @@ export const AssigneeOperationsService = {
   async assignUsersToTask(taskId: number, assigneeIds: number[]): Promise<void> {
     const client = await getClientFromContext();
     const currentTask = await client.tasks.getTask(taskId);
-    const currentAssigneeIds = currentTask.assignees?.map((assignee) => assignee.id) ?? [];
+    const currentAssigneeIds = currentTask?.assignees?.map((assignee) => assignee.id) ?? [];
     const finalAssigneeIds = [...new Set([...currentAssigneeIds, ...assigneeIds])];
 
     try {
