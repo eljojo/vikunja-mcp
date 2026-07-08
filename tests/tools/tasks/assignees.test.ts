@@ -365,13 +365,12 @@ describe('Assignee operations', () => {
         title: 'Test Task',
         assignees: [{ id: 1, name: 'User 1' }],
       };
-      
+
       mockClient.tasks.getTask.mockResolvedValue(mockTask);
 
-      const result = await listAssignees({ id: 123 });
-
-      const markdown = result.content[0].text;
-      expect(markdown).toContain('Test Task');
+      await expect(listAssignees({ id: 123 })).rejects.toThrow(
+        'Task returned from API is missing required id field'
+      );
     });
   });
 

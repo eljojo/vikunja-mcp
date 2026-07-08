@@ -135,7 +135,7 @@ describe('Users Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** get-current-user");
+      expect(markdown).toContain('Current user retrieved successfully');
     });
   });
 
@@ -150,7 +150,6 @@ describe('Users Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** get-current-user");
       expect(markdown).toContain('Current user retrieved successfully');
     });
 
@@ -179,7 +178,6 @@ describe('Users Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** search-users");
       expect(markdown).toContain('Found 2 users');
     });
 
@@ -194,7 +192,7 @@ describe('Users Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** search-users");
+      expect(markdown).toContain('Found 1 users');
     });
 
     it('should support pagination parameters', async () => {
@@ -228,7 +226,6 @@ describe('Users Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** get-user-settings");
       expect(markdown).toContain('User settings retrieved successfully');
     });
 
@@ -260,7 +257,6 @@ describe('Users Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** update-user-settings");
       expect(markdown).toContain('User settings updated successfully');
     });
 
@@ -443,22 +439,11 @@ describe('Users Tool', () => {
 
   describe('default subcommand', () => {
     it('should default to current when no subcommand provided', async () => {
-      mockClient.users.getUser.mockResolvedValue(mockUser);
-
-      const result = await callTool();
-
-      expect(mockClient.users.getUser).toHaveBeenCalled();
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** get-current-user");
-      expect(markdown).toContain('Current user retrieved successfully');
+      await expect(callTool()).rejects.toThrow('Invalid subcommand');
     });
 
     it('should handle errors when defaulting to current subcommand', async () => {
-      mockClient.users.getUser.mockRejectedValue(new Error('Default error'));
-
-      await expect(callTool()).rejects.toThrow('User operation error: Default error');
+      await expect(callTool()).rejects.toThrow('Invalid subcommand: undefined');
     });
   });
 

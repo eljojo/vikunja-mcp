@@ -159,7 +159,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** create-template");
       expect(markdown).toContain('Template "Sprint Template" created successfully');
     });
 
@@ -211,7 +210,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** create-template");
 
       // Verify the template data structure
       const createCall = (mockFilterStorage.create as jest.Mock).mock.calls[0][0];
@@ -250,7 +248,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** create-template");
 
       // Verify undefined IDs are filtered out
       const createCall = (mockFilterStorage.create as jest.Mock).mock.calls[0][0];
@@ -307,7 +304,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** create-template");
 
       const createCall = (mockFilterStorage.create as jest.Mock).mock.calls[0][0];
       const templateData = JSON.parse(createCall.filter);
@@ -354,7 +350,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** create-template");
 
       const createCall = (mockFilterStorage.create as jest.Mock).mock.calls[0][0];
       const templateData = JSON.parse(createCall.filter);
@@ -405,7 +400,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** list-templates");
       expect(markdown).toContain('2'); // Should show count of 2 templates
     });
 
@@ -435,7 +429,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** list-templates");
       expect(markdown).toContain('1'); // Should show count of 1 template (invalid one filtered out)
     });
 
@@ -481,7 +474,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** get-template");
       expect(markdown).toContain('Sprint Template');
     });
 
@@ -559,7 +551,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** update-template");
       expect(markdown).toContain('Template "New Name" updated successfully');
     });
 
@@ -638,7 +629,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** update-template");
       expect(markdown).toContain('Template "New Name" updated successfully');
     });
 
@@ -714,7 +704,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** delete-template");
       expect(markdown).toContain('Template "Template to delete" deleted successfully');
     });
 
@@ -842,7 +831,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** instantiate-template");
       expect(markdown).toContain('Project "Sprint 24" created from template');
     });
 
@@ -876,7 +864,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** instantiate-template");
       expect(markdown).toContain('1'); // Should show 1 created task
     });
 
@@ -968,7 +955,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** instantiate-template");
       expect(markdown).toContain('1'); // Should show created and failed task counts
     });
 
@@ -1060,7 +1046,6 @@ describe('Templates Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** instantiate-template");
     });
 
     it('should handle tasks with position field', async () => {

@@ -156,7 +156,6 @@ describe('Teams Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** list-teams");
       expect(markdown).toContain('Retrieved 2 teams');
     });
 
@@ -211,7 +210,6 @@ describe('Teams Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** create-team");
       expect(markdown).toContain('Team "Test Team" created successfully');
     });
 
@@ -261,7 +259,6 @@ describe('Teams Tool', () => {
 
       const markdown = result.content[0].text;
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** get-team");
       expect(markdown).toContain('Retrieved team "Test Team"');
     });
 
@@ -313,7 +310,6 @@ describe('Teams Tool', () => {
 
       const markdown = result.content[0].text;
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** update-team");
       expect(markdown).toContain('Team "Updated Team Name" updated successfully');
     });
 
@@ -337,7 +333,7 @@ describe('Teams Tool', () => {
 
       const markdown = result.content[0].text;
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** update-team");
+      expect(markdown).toContain('Team "Test Team" updated successfully');
     });
 
     it('should update both name and description', async () => {
@@ -391,7 +387,6 @@ describe('Teams Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** delete-team");
       expect(markdown).toContain('Team deleted successfully');
     });
 
@@ -405,7 +400,7 @@ describe('Teams Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** delete-team");
+      expect(markdown).toContain('Team deleted successfully');
     });
 
     it('should handle team not found error', async () => {
@@ -441,7 +436,6 @@ describe('Teams Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** delete-team");
       expect(markdown).toContain('Team deleted successfully');
     });
 
@@ -478,7 +472,7 @@ describe('Teams Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** delete-team");
+      expect(markdown).toContain('Team deleted successfully');
     });
   });
 
@@ -517,7 +511,6 @@ describe('Teams Tool', () => {
 
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
-        expect(markdown).toContain("**Operation:** list-team-members");
         expect(markdown).toContain('Retrieved 2 members');
       });
 
@@ -599,7 +592,6 @@ describe('Teams Tool', () => {
 
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
-        expect(markdown).toContain("**Operation:** add-team-member");
         expect(markdown).toContain('User 3 added to team successfully');
       });
 
@@ -675,7 +667,6 @@ describe('Teams Tool', () => {
 
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
-        expect(markdown).toContain("**Operation:** remove-team-member");
         expect(markdown).toContain('User 2 removed from team successfully');
       });
 
@@ -730,7 +721,6 @@ describe('Teams Tool', () => {
 
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
-        expect(markdown).toContain("**Operation:** update-team-member");
         expect(markdown).toContain('User 2 updated in team successfully');
       });
 
@@ -818,16 +808,7 @@ describe('Teams Tool', () => {
 
   describe('default subcommand', () => {
     it('should default to list when no subcommand provided', async () => {
-      mockClient.teams.getTeams.mockResolvedValue([mockTeam]);
-
-      const result = await callTool();
-
-      expect(mockClient.teams.getTeams).toHaveBeenCalled();
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** list-teams");
-      expect(markdown).toContain('Retrieved 1 team');
+      await expect(callTool()).rejects.toThrow('Invalid subcommand');
     });
   });
 

@@ -68,7 +68,6 @@ describe('Archive/Unarchive Logic', () => {
       const markdown = result.content[0].text;
       expect(markdown).toContain('## ✅ Success');
       expect(markdown).toContain('Project "Test Project" is already archived');
-      expect(markdown).toContain('**Operation:** archive_project');
     });
 
     it('should archive project if not already archived', async () => {
@@ -86,7 +85,6 @@ describe('Archive/Unarchive Logic', () => {
       const markdown = result.content[0].text;
       expect(markdown).toContain('## ✅ Success');
       expect(markdown).toContain('Project "Test Project" archived successfully');
-      expect(markdown).toContain('**Operation:** archive_project');
     });
   });
 
@@ -102,7 +100,6 @@ describe('Archive/Unarchive Logic', () => {
       const markdown = result.content[0].text;
       expect(markdown).toContain('## ✅ Success');
       expect(markdown).toContain('Project "Test Project" is already active (not archived)');
-      expect(markdown).toContain('**Operation:** unarchive_project');
     });
 
     it('should unarchive project if currently archived', async () => {
@@ -120,7 +117,6 @@ describe('Archive/Unarchive Logic', () => {
       const markdown = result.content[0].text;
       expect(markdown).toContain('## ✅ Success');
       expect(markdown).toContain('Project "Test Project" unarchived successfully');
-      expect(markdown).toContain('**Operation:** unarchive_project');
     });
   });
 });

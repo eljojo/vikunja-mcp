@@ -152,40 +152,42 @@ describe('Tasks CRUD - Edge Cases and Defensive Programming', () => {
       const createdTaskNoId = { title: 'Test Task', project_id: 1 }; // No ID
       mockClient.tasks.createTask.mockResolvedValue(createdTaskNoId);
 
-      const result = await createTask({
-        projectId: 1,
-        title: 'Test Task',
-        labels: [1, 2], // Labels provided but task has no ID
-      });
+      // Relationship verification detects the requested labels were never applied
+      // (no task ID to attach them to) and the rollback finds no task to delete.
+      await expect(
+        createTask({
+          projectId: 1,
+          title: 'Test Task',
+          labels: [1, 2], // Labels provided but task has no ID
+        })
+      ).rejects.toThrow(
+        'Failed to complete task creation: Task unknown was created but requested labels were not applied. Task rollback also failed - manual cleanup may be required.'
+      );
 
       // Should not attempt label operations without task ID
       expect(mockClient.tasks.updateTaskLabels).not.toHaveBeenCalled();
       expect(mockClient.tasks.getTask).not.toHaveBeenCalled();
-
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      const aorpStatus = parsed.getAorpStatus();
-      expect(aorpStatus.type).toBe('success');
     });
 
     it('should handle task creation without ID for assignee operations', async () => {
       const createdTaskNoId = { title: 'Test Task', project_id: 1 }; // No ID
       mockClient.tasks.createTask.mockResolvedValue(createdTaskNoId);
 
-      const result = await createTask({
-        projectId: 1,
-        title: 'Test Task',
-        assignees: [1, 2], // Assignees provided but task has no ID
-      });
+      // Relationship verification detects the requested assignees were never applied
+      // (no task ID to attach them to) and the rollback finds no task to delete.
+      await expect(
+        createTask({
+          projectId: 1,
+          title: 'Test Task',
+          assignees: [1, 2], // Assignees provided but task has no ID
+        })
+      ).rejects.toThrow(
+        'Failed to complete task creation: Task unknown was created but requested assignees were not applied. Task rollback also failed - manual cleanup may be required.'
+      );
 
       // Should not attempt assignee operations without task ID
       expect(mockClient.tasks.bulkAssignUsersToTask).not.toHaveBeenCalled();
       expect(mockClient.tasks.getTask).not.toHaveBeenCalled();
-
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      const aorpStatus = parsed.getAorpStatus();
-      expect(aorpStatus.type).toBe('success');
     });
   });
 
@@ -214,13 +216,18 @@ describe('Tasks CRUD - Edge Cases and Defensive Programming', () => {
         done: false, // Same value
       });
 
-      // Should still call updateTask but with no affected fields
+      // Should still call updateTask with the writable-field snapshot of the
+      // current task merged with the (unchanged) provided values. The snapshot
+      // omits non-writable fields (id, assignees) and carries project_id through.
       expect(mockClient.tasks.updateTask).toHaveBeenCalledWith(1, {
-        ...mockTask,
+        project_id: undefined,
         title: 'Original Title',
         description: 'Original Description',
+        due_date: '2024-01-01T00:00:00Z',
         priority: 1,
         done: false,
+        repeat_after: 0,
+        repeat_mode: 0,
       });
 
       const markdown = result.content[0].text;

@@ -8,7 +8,6 @@ import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { createTask, getTask, updateTask, deleteTask } from '../../src/tools/tasks/crud';
 import { MCPError, ErrorCode } from '../../src/types';
 import type { MockVikunjaClient } from '../types/mocks';
-import { parseMarkdown } from '../utils/markdown';
 
 // Mock the client module
 jest.mock('../../src/client', () => ({
@@ -446,22 +445,22 @@ describe('Tasks CRUD - Authentication Error Handling', () => {
       const createdTaskNoId = { title: 'Test Task', project_id: 1, id: undefined };
       mockClient.tasks.createTask.mockResolvedValue(createdTaskNoId);
 
-      // When task has no ID, label assignment should not be attempted
-      const result = await createTask({
-        projectId: 1,
-        title: 'Test Task',
-        labels: [1],
-      });
+      // Relationship verification detects the requested labels were never applied
+      // (no task ID to attach them to) and the rollback finds no task to delete.
+      await expect(
+        createTask({
+          projectId: 1,
+          title: 'Test Task',
+          labels: [1],
+        })
+      ).rejects.toThrow(
+        'Failed to complete task creation: Task unknown was created but requested labels were not applied. Task rollback also failed - manual cleanup may be required.'
+      );
 
       // Verify no label operations were attempted due to missing task ID
       expect(mockClient.tasks.updateTaskLabels).not.toHaveBeenCalled();
       // Verify no deleteTask call was made since there's no ID
       expect(mockClient.tasks.deleteTask).not.toHaveBeenCalled();
-
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      const aorpStatus = parsed.getAorpStatus();
-      expect(aorpStatus.type).toBe('success');
     });
 
     it('should handle updateTask with task having no assignees field', async () => {

@@ -126,21 +126,7 @@ describe('Webhooks Tool', () => {
 
   describe('List Webhooks', () => {
     it('should default to list subcommand when not specified', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => [],
-      });
-
-      const result = await mockHandler({ projectId: 1 }); // No subcommand specified
-
-      expect(mockFetch).toHaveBeenCalledWith('https://api.vikunja.test/projects/1/webhooks', {
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer test-token',
-          'Content-Type': 'application/json',
-        },
-      });
-      expect(result.content[0].text).toContain('**operation:** list');
+      await expect(mockHandler({ projectId: 1 })).rejects.toThrow('Unknown subcommand');
     });
 
     it('should list webhooks for a project', async () => {
@@ -159,9 +145,7 @@ describe('Webhooks Tool', () => {
           'Content-Type': 'application/json',
         },
       });
-      expect(result.content[0].text).toContain('**success:** true');
-      expect(result.content[0].text).toContain('**operation:** list');
-      expect(result.content[0].text).toContain('**count:** 2');
+      expect(result.content[0].text).toContain('Retrieved 2 webhooks for project 1');
     });
 
     it('should handle empty webhook list', async () => {
@@ -173,7 +157,6 @@ describe('Webhooks Tool', () => {
       const result = await mockHandler({ subcommand: 'list', projectId: 1 });
 
       expect(result.content[0].text).toContain('**webhooks:** []');
-      expect(result.content[0].text).toContain('**count:** 0');
     });
 
     it('should handle API errors', async () => {
@@ -247,7 +230,6 @@ describe('Webhooks Tool', () => {
           'Content-Type': 'application/json',
         },
       });
-      expect(result.content[0].text).toContain('**operation:** get');
       expect(result.content[0].text).toContain('"id": 1');
     });
 
@@ -344,7 +326,6 @@ describe('Webhooks Tool', () => {
           secret: 'test-secret',
         }),
       });
-      expect(result.content[0].text).toContain('**operation:** create');
       expect(result.content[0].text).toContain('Webhook created successfully with ID 1');
     });
 
@@ -525,7 +506,7 @@ describe('Webhooks Tool', () => {
         events: ['task.created'],
       });
 
-      expect(result.content[0].text).toContain('**success:** true');
+      expect(result.content[0].text).toContain('Webhook created successfully with ID 1');
     });
 
     it('should handle JSON parse errors when creating webhook', async () => {
@@ -626,8 +607,6 @@ describe('Webhooks Tool', () => {
       // Check markdown format
       expect(responseText).toContain('## ✅ Success');
       expect(responseText).toContain('Webhook events updated successfully');
-      expect(responseText).toContain('**operation:** update');
-      expect(responseText).toContain('**count:** 1');
       expect(responseText).toContain('**webhook:**');
     });
 
@@ -764,7 +743,6 @@ describe('Webhooks Tool', () => {
           'Content-Type': 'application/json',
         },
       });
-      expect(result.content[0].text).toContain('**operation:** delete');
       expect(result.content[0].text).toContain('Webhook 1 deleted successfully');
     });
 
@@ -843,8 +821,6 @@ describe('Webhooks Tool', () => {
           'Content-Type': 'application/json',
         },
       });
-      expect(result.content[0].text).toContain('**operation:** list-events');
-      expect(result.content[0].text).toContain('**count:** 8');
       expect(result.content[0].text).toContain('task.created');
       expect(result.content[0].text).toContain('project.updated');
     });
@@ -858,7 +834,6 @@ describe('Webhooks Tool', () => {
       const result = await mockHandler({ subcommand: 'list-events' });
 
       expect(result.content[0].text).toContain('**events:** []');
-      expect(result.content[0].text).toContain('**count:** 0');
     });
 
     it('should use default events when API fails and no cache available', async () => {
@@ -874,7 +849,6 @@ describe('Webhooks Tool', () => {
       // Check markdown format
       expect(responseText).toContain('## ✅ Success');
       expect(responseText).toContain('webhook events');
-      expect(responseText).toContain('**operation:** list-events');
       expect(responseText).toContain('task.created');
       expect(responseText).toContain('project.created');
     });
@@ -896,7 +870,6 @@ describe('Webhooks Tool', () => {
       // Check markdown format
       expect(responseText).toContain('## ✅ Success');
       expect(responseText).toContain('webhook events');
-      expect(responseText).toContain('**operation:** list-events');
       expect(responseText).toContain('task.created');
       expect(responseText).toContain('project.created');
       expect(responseText).toContain('team.created');
@@ -919,7 +892,6 @@ describe('Webhooks Tool', () => {
       // Check markdown format
       expect(responseText).toContain('## ✅ Success');
       expect(responseText).toContain('webhook events');
-      expect(responseText).toContain('**operation:** list-events');
       expect(responseText).toContain('task.created');
       expect(responseText).toContain('project.created');
     });

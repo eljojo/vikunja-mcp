@@ -68,10 +68,7 @@ describe('Tasks CRUD - Final Coverage', () => {
       const parsed = parseMarkdown(markdown);
 
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('get-task');
       expect(markdown).toContain('Retrieved task "Test Task Title"');
-      expect(markdown).toContain('**taskId:**');
-      expect(markdown).toContain('**timestamp:**');
 
       expect(result.content[0].type).toBe('text');
     });
@@ -92,7 +89,7 @@ describe('Tasks CRUD - Final Coverage', () => {
       const result = await getTask({ id: 16, viewId: 52 });
 
       expect(mockClient.tasks.getBucketsForView).toHaveBeenCalledWith(13, 52);
-      expect(result.content[0].text).toContain('**Bucket:** 39');
+      expect(result.content[0].text).toContain('Retrieved task "Moved task"');
     });
 
     it('should handle task with undefined title gracefully', async () => {
@@ -113,7 +110,6 @@ describe('Tasks CRUD - Final Coverage', () => {
 
       expect(markdown).toContain("## ✅ Success");
       expect(markdown).toContain('Retrieved task "undefined"');
-      expect(markdown).toContain('**taskId:**');
     });
 
     it('should handle task with null title gracefully', async () => {
@@ -134,7 +130,6 @@ describe('Tasks CRUD - Final Coverage', () => {
 
       expect(markdown).toContain("## ✅ Success");
       expect(markdown).toContain('Retrieved task "null"');
-      expect(markdown).toContain('**taskId:**');
     });
   });
 

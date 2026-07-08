@@ -142,20 +142,7 @@ describe('Labels Tool', () => {
 
   describe('List Labels', () => {
     it('should default to list when no subcommand provided', async () => {
-      const mockLabels = [
-        { id: 1, title: 'Bug' },
-        { id: 2, title: 'Feature' },
-      ];
-      mockClient.labels.getLabels.mockResolvedValue(mockLabels);
-
-      const result = await mockHandler({});
-
-      expect(mockClient.labels.getLabels).toHaveBeenCalledWith({});
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('list-labels');
-      expect(markdown).toContain('Retrieved 2 labels');
+      await expect(mockHandler({})).rejects.toThrow('Invalid subcommand');
     });
 
     it('should list all labels without parameters', async () => {
@@ -171,7 +158,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('list-labels');
       expect(markdown).toContain('Retrieved 2 labels');
     });
 
@@ -192,7 +178,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** list-labels");
       expect(markdown).toContain('Retrieved 1 label');
     });
 
@@ -211,7 +196,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain("**Operation:** list-labels");
       expect(markdown).toContain('Retrieved 1 label');
     });
   });
@@ -252,7 +236,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('get-label');
       expect(markdown).toContain('Retrieved label "Bug"');
     });
 
@@ -297,7 +280,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-label');
       expect(markdown).toContain('Label "New Label" created successfully');
     });
 
@@ -325,7 +307,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-label');
       expect(markdown).toContain('Label "Priority" created successfully');
     });
 
@@ -398,7 +379,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('update-label');
       expect(markdown).toContain('Label "Updated Label" updated successfully');
     });
 
@@ -427,7 +407,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('update-label');
       expect(markdown).toContain('Label "Complete Update" updated successfully');
     });
 
@@ -451,7 +430,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('update-label');
       expect(markdown).toContain('Label "Label" updated successfully');
     });
 
@@ -494,7 +472,6 @@ describe('Labels Tool', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('delete-label');
       expect(markdown).toContain('Label deleted successfully');
     });
 

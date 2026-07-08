@@ -304,8 +304,8 @@ describe('Storage Integration', () => {
       expect(filters2[0].name).toBe('Memory Filter 3');
       expect(filters2[0].projectId).toBe(123);
 
-      await persistentStorage1.close();
-      await persistentStorage2.close();
+      await (verifyStorage1 as any).close();
+      await (verifyStorage2 as any).close();
     });
 
     it('should handle empty memory storage gracefully', async () => {
@@ -366,7 +366,7 @@ describe('Storage Integration', () => {
 
       // Verify data remains in memory storage (no migration in simplified version)
       const verifyMetadataStorage = await storageManager.getStorage('metadata-session');
-      const filters = await memoryStorage.list();
+      const filters = await verifyMetadataStorage.list();
 
       expect(filters).toHaveLength(1);
       const filter = filters[0];

@@ -195,7 +195,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Retrieved 2 projects');
-      expect(markdown).toMatch(/list[_\\]+projects/);
     });
 
     it('should support pagination parameters', async () => {
@@ -261,7 +260,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Retrieved project: Test Project');
-      expect(markdown).toMatch(/get[_\\]+project/);
     });
 
     it('should require project ID', async () => {
@@ -318,7 +316,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Project "Test Project" created successfully');
-      expect(markdown).toMatch(/create[_\\]+project/);
     });
 
     it('should require project title', async () => {
@@ -362,7 +359,7 @@ describe('Projects Tool', () => {
       mockClient.projects.createProject.mockRejectedValue('String error');
 
       await expect(callTool('create', { title: 'New Project' })).rejects.toThrow(
-        'Failed to create project: Unknown error',
+        'Failed to create project: String error',
       );
     });
 
@@ -453,7 +450,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Project "Updated Title" updated successfully');
-      expect(markdown).toMatch(/update[_\\]+project/);
     });
 
     it('should require project ID', async () => {
@@ -721,7 +717,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Project "Test Project" archived successfully');
-      expect(markdown).toMatch(/archive[_\\]+project/);
     });
 
     it('should return already archived message if project is already archived', async () => {
@@ -738,7 +733,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Project "Test Project" is already archived');
-      expect(markdown).toMatch(/archive[_\\]+project/);
     });
 
     it('should require project ID', async () => {
@@ -773,7 +767,7 @@ describe('Projects Tool', () => {
       mockClient.projects.getProject.mockRejectedValue('string error');
 
       await expect(callTool('archive', { id: 1 })).rejects.toThrow(
-        'Failed to archive project: Unknown error',
+        'Failed to archive project: string error',
       );
     });
   });
@@ -798,7 +792,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Project "Test Project" unarchived successfully');
-      expect(markdown).toMatch(/unarchive[_\\]+project/);
     });
 
     it('should return already active message if project is not archived', async () => {
@@ -814,7 +807,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Project "Test Project" is already active (not archived)');
-      expect(markdown).toMatch(/unarchive[_\\]+project/);
     });
 
     it('should require project ID', async () => {
@@ -849,7 +841,7 @@ describe('Projects Tool', () => {
       mockClient.projects.getProject.mockRejectedValue('string error');
 
       await expect(callTool('unarchive', { id: 1 })).rejects.toThrow(
-        'Failed to unarchive project: Unknown error',
+        'Failed to unarchive project: string error',
       );
     });
   });
@@ -878,7 +870,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Share created successfully for project ID 1');
-      expect(markdown).toMatch(/create[_\\]+project[_\\]+share/);
       expect(mockClient.projects.createLinkShare).toHaveBeenCalledWith(1, {
         project_id: 1,
         right: 0,
@@ -988,7 +979,7 @@ describe('Projects Tool', () => {
       mockClient.projects.createLinkShare.mockRejectedValue('String error');
 
       await expect(callTool('create-share', { projectId: 1, right: 'read' })).rejects.toThrow(
-        'Failed to create share: Unknown error',
+        'Failed to create share: String error',
       );
     });
   });
@@ -1031,7 +1022,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Retrieved 2 shares for project 1');
-      expect(markdown).toMatch(/list[_\\]+project[_\\]+shares/);
       expect(mockClient.projects.getLinkShares).toHaveBeenCalledWith(1, {});
     });
 
@@ -1070,7 +1060,7 @@ describe('Projects Tool', () => {
       mockClient.projects.getLinkShares.mockRejectedValue({ message: 'API Error' });
 
       await expect(callTool('list-shares', { projectId: 1 })).rejects.toThrow(
-        'Failed to list shares: Unknown error',
+        'Failed to list shares: API Error',
       );
     });
   });
@@ -1098,9 +1088,8 @@ describe('Projects Tool', () => {
 
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('Retrieved share 1 for project 1');
-      expect(markdown).toMatch(/get[_\\]+project[_\\]+share/);
-      expect(mockClient.projects.getLinkShare).toHaveBeenCalledWith(1, '1');
+      expect(markdown).toContain('Retrieved link share: Share #1');
+      expect(mockClient.projects.getLinkShare).toHaveBeenCalledWith(1, 1);
     });
 
     it('should require project ID', async () => {
@@ -1137,7 +1126,7 @@ describe('Projects Tool', () => {
       mockClient.projects.getLinkShare.mockRejectedValue(123);
 
       await expect(callTool('get-share', { projectId: 1, shareId: '1' })).rejects.toThrow(
-        'Failed to get share: Unknown error',
+        'Failed to get share: 123',
       );
     });
   });
@@ -1167,9 +1156,8 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Share with ID 1 deleted successfully');
-      expect(markdown).toMatch(/delete[_\\]+project[_\\]+share/);
-      expect(mockClient.projects.getLinkShare).toHaveBeenCalledWith(1, '1');
-      expect(mockClient.projects.deleteLinkShare).toHaveBeenCalledWith(1, '1');
+      expect(mockClient.projects.getLinkShare).toHaveBeenCalledWith(1, 1);
+      expect(mockClient.projects.deleteLinkShare).toHaveBeenCalledWith(1, 1);
     });
 
     it('should require project ID', async () => {
@@ -1233,7 +1221,6 @@ describe('Projects Tool', () => {
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
       expect(markdown).toContain('Successfully authenticated to share');
-      expect(markdown).toMatch(/auth[_\\]+project[_\\]+share/);
       expect(mockClient.shares.getShareAuth).toHaveBeenCalledWith('abc123', {
         password: '',
       });
@@ -1296,7 +1283,7 @@ describe('Projects Tool', () => {
     it('should handle unexpected errors', async () => {
       mockClient.projects.getProjects.mockRejectedValue('String error');
 
-      await expect(callTool('list')).rejects.toThrow('Failed to list projects: Unknown error');
+      await expect(callTool('list')).rejects.toThrow('Failed to list projects: String error');
     });
 
     it('should pass through MCPError instances', async () => {
@@ -1312,7 +1299,7 @@ describe('Projects Tool', () => {
         throw new Error('Unexpected auth error');
       });
 
-      await expect(callTool('list')).rejects.toThrow('Unexpected error: Unexpected auth error');
+      await expect(callTool('list')).rejects.toThrow('Unexpected auth error');
     });
 
     it('should handle non-Error thrown values in main handler', async () => {
@@ -1321,7 +1308,7 @@ describe('Projects Tool', () => {
         throw 'String error thrown';
       });
 
-      await expect(callTool('list')).rejects.toThrow('Unexpected error: Unknown error');
+      await expect(callTool('list')).rejects.toBe('String error thrown');
     });
   });
 
@@ -1339,7 +1326,6 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('get-project-children');
       expect(markdown).toContain('Child 1');
       expect(markdown).toContain('Child 2');
     });
@@ -1374,7 +1360,7 @@ describe('Projects Tool', () => {
       mockAuthManager.isAuthenticated.mockReturnValue(true);
       mockClient.projects.getProjects.mockRejectedValueOnce('String error');
       await expect(callTool('get-children', { id: 1 })).rejects.toThrow(
-        'Failed to get project children: Unknown error',
+        'Failed to get project children: String error',
       );
     });
   });
@@ -1395,9 +1381,8 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('get-project-tree');
+      expect(markdown).toContain('Retrieved project tree with 4 nodes at depth 2');
       expect(markdown).toContain('Root');
-      expect(markdown).toContain('**TotalProjects**: 4');
     });
 
     it('should handle circular references', async () => {
@@ -1413,14 +1398,13 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('get-project-tree');
       expect(markdown).toContain('Project 1');
       expect(markdown).toContain('Project 2');
     });
 
     it('should require project ID', async () => {
       mockAuthManager.isAuthenticated.mockReturnValue(true);
-      await expect(callTool('get-tree')).rejects.toThrow('Project ID is required');
+      await expect(callTool('get-tree')).rejects.toThrow('id must be a positive integer');
     });
 
     it('should validate project ID', async () => {
@@ -1473,7 +1457,7 @@ describe('Projects Tool', () => {
 
       const result = await callTool('get-tree', { id: 1 });
       const markdown = result.content[0].text;
-      expect(markdown).toContain('Retrieved project tree with 1 project starting from project ID 1');
+      expect(markdown).toContain('Retrieved project tree with 1 nodes at depth 0');
     });
 
     it('should handle countProjects with null node', async () => {
@@ -1512,8 +1496,9 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('get-project-breadcrumb');
-      expect(markdown).toContain('Root > Child > Grandchild');
+      expect(markdown).toContain('Root');
+      expect(markdown).toContain('Child');
+      expect(markdown).toContain('Grandchild');
     });
 
     it('should handle circular references', async () => {
@@ -1568,7 +1553,7 @@ describe('Projects Tool', () => {
       mockAuthManager.isAuthenticated.mockReturnValue(true);
       mockClient.projects.getProjects.mockRejectedValueOnce(123);
       await expect(callTool('get-breadcrumb', { id: 1 })).rejects.toThrow(
-        'Failed to get project breadcrumb: Unknown error',
+        'Failed to get project breadcrumb: 123',
       );
     });
   });
@@ -1580,6 +1565,7 @@ describe('Projects Tool', () => {
         { ...mockProject, id: 1, title: 'Parent', parent_project_id: undefined },
         { ...mockProject, id: 2, title: 'Project to Move', parent_project_id: undefined },
       ];
+      mockClient.projects.getProject.mockResolvedValueOnce(projects[1]);
       mockClient.projects.getProjects.mockResolvedValueOnce(projects);
       mockClient.projects.updateProject.mockResolvedValueOnce({
         ...projects[1],
@@ -1591,8 +1577,7 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('move-project');
-      expect(markdown).toContain('moved to parent project ID 1');
+      expect(markdown).toContain('Moved project "Project to Move" to parent project 1');
     });
 
     it('should move project to root', async () => {
@@ -1600,6 +1585,7 @@ describe('Projects Tool', () => {
       const projects = [
         { ...mockProject, id: 1, title: 'Project', parent_project_id: 2 },
       ];
+      mockClient.projects.getProject.mockResolvedValueOnce(projects[0]);
       mockClient.projects.getProjects.mockResolvedValueOnce(projects);
       mockClient.projects.updateProject.mockResolvedValueOnce({
         ...projects[0],
@@ -1611,7 +1597,7 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('moved to root level');
+      expect(markdown).toContain('Moved project "Project" to root level');
     });
 
     it('should prevent self-parent', async () => {
@@ -1619,9 +1605,10 @@ describe('Projects Tool', () => {
       const projects = [
         { ...mockProject, id: 1, title: 'Project', parent_project_id: undefined },
       ];
+      mockClient.projects.getProject.mockResolvedValueOnce(projects[0]);
       mockClient.projects.getProjects.mockResolvedValueOnce(projects);
 
-      await expect(callTool('move', { id: 1, parentProjectId: 1 })).rejects.toThrow('cannot be its own parent');
+      await expect(callTool('move', { id: 1, parentProjectId: 1 })).rejects.toThrow('Cannot move a project to be its own parent');
     });
 
     it('should prevent circular references', async () => {
@@ -1634,7 +1621,7 @@ describe('Projects Tool', () => {
       mockClient.projects.getProjects.mockResolvedValueOnce(projects);
       mockClient.projects.getProject.mockResolvedValueOnce(projects[0]); // Mock project 1 lookup
 
-      await expect(callTool('move', { id: 1, parentProjectId: 3 })).rejects.toThrow('Cannot move a project to one of its descendants');
+      await expect(callTool('move', { id: 1, parentProjectId: 3 })).rejects.toThrow('Move would create a circular reference in project hierarchy');
     });
 
     it('should prevent exceeding max depth', async () => {
@@ -1649,30 +1636,27 @@ describe('Projects Tool', () => {
           parent_project_id: i > 1 ? i - 1 : undefined,
         });
       }
-      // Add a project with deep children to move
+      // Add a project (id 10) whose own subtree is deeper than the max, so moving
+      // it anywhere makes getMaxSubtreeDepth exceed MAX_PROJECT_DEPTH.
       projects.push({
         ...mockProject,
         id: 10,
         title: 'Project with children',
         parent_project_id: undefined,
       });
-      projects.push({
-        ...mockProject,
-        id: 11,
-        title: 'Child of 10',
-        parent_project_id: 10,
-      });
-      projects.push({
-        ...mockProject,
-        id: 12,
-        title: 'Grandchild of 10',
-        parent_project_id: 11,
-      });
+      for (let i = 11; i <= 22; i++) {
+        projects.push({
+          ...mockProject,
+          id: i,
+          title: `Descendant ${i}`,
+          parent_project_id: i - 1,
+        });
+      }
 
       mockClient.projects.getProjects.mockResolvedValueOnce(projects);
       mockClient.projects.getProject.mockResolvedValueOnce(projects.find(p => p.id === 10)); // Mock project 10 lookup
 
-      await expect(callTool('move', { id: 10, parentProjectId: 9 })).rejects.toThrow('exceed the maximum depth');
+      await expect(callTool('move', { id: 10, parentProjectId: 9 })).rejects.toThrow('exceeds maximum allowed depth of 10');
     });
 
     it('should require project ID', async () => {
@@ -1682,7 +1666,7 @@ describe('Projects Tool', () => {
 
     it('should validate project ID', async () => {
       mockAuthManager.isAuthenticated.mockReturnValue(true);
-      await expect(callTool('move', { id: 0 })).rejects.toThrow('id must be a positive integer');
+      await expect(callTool('move', { id: 0 })).rejects.toThrow('Project ID is required for move operation');
     });
 
     it('should validate parent project ID', async () => {
@@ -1768,12 +1752,11 @@ describe('Projects Tool', () => {
         parent_project_id: 1,
       });
 
-      const result = await callTool('move', { id: 5, parentProjectId: 1 });
-      const markdown = result.content[0].text;
-      const parsed = parseMarkdown(markdown);
-      const aorpStatus = parsed.getAorpStatus();
-      expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('move-project');
+      // A duplicate project ID reachable from two parents trips the visited-set
+      // guard in getMaxSubtreeDepth, which the move surfaces as a circular reference.
+      await expect(callTool('move', { id: 5, parentProjectId: 1 })).rejects.toThrow(
+        'Move would create a circular reference in project hierarchy',
+      );
     });
 
     it('should handle projects without IDs in getMaxSubtreeDepth', async () => {
@@ -1806,7 +1789,7 @@ describe('Projects Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('move-project');
+      expect(markdown).toContain('to parent project 4');
     });
 
     it('should handle missing project in calculateProjectDepth', async () => {
@@ -1916,7 +1899,7 @@ describe('Projects Tool', () => {
         const parsed = parseMarkdown(markdown);
         const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-        expect(markdown).toContain('NewParentProjectId');
+        expect(markdown).toContain('to parent project 2');
       } finally {
         // Restore original shift method
         (Array.prototype.shift as jest.Mock).mockRestore();

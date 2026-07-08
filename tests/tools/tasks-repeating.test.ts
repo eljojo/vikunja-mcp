@@ -178,7 +178,6 @@ describe('Tasks Tool - Repeating Tasks', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-task');
       expect(markdown).toContain('**projectId:**');
       expect(markdown).toContain('Task created successfully');
     });
@@ -214,7 +213,6 @@ describe('Tasks Tool - Repeating Tasks', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-task');
       expect(markdown).toContain('Task created successfully');
     });
 
@@ -249,7 +247,6 @@ describe('Tasks Tool - Repeating Tasks', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-task');
       expect(markdown).toContain('Task created successfully');
     });
 
@@ -284,7 +281,6 @@ describe('Tasks Tool - Repeating Tasks', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-task');
       expect(markdown).toContain('Task created successfully');
     });
 
@@ -334,9 +330,7 @@ describe('Tasks Tool - Repeating Tasks', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-tasks');
       expect(markdown).toContain('Successfully created 2 tasks');
-      expect(markdown).toContain('**count:**');
     });
   });
 
@@ -376,7 +370,6 @@ describe('Tasks Tool - Repeating Tasks', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('update-task');
       expect(markdown).toContain('Task updated successfully');
       expect(markdown).toContain('**affectedFields:**');
     });

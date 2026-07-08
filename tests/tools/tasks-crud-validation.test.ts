@@ -394,7 +394,6 @@ describe('Tasks CRUD - Validation Coverage', () => {
       const markdown = result.content[0].text;
       const parsed = parseMarkdown(markdown);
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('update-task');
       expect(markdown).toContain('Task updated successfully');
     });
   });

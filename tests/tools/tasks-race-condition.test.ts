@@ -233,7 +233,6 @@ describe('Tasks Tool - Race Condition Fix', () => {
       const parsed = parseMarkdown(markdown);
 
       expect(markdown).toContain("## ✅ Success");
-      expect(markdown).toContain('create-task');
       expect(markdown).toContain('Task created successfully');
 
       // Verify no cleanup was attempted

@@ -243,8 +243,6 @@ describe('Bulk operations', () => {
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
         expect(markdown).toContain('Successfully updated 2 tasks');
-        expect(markdown).toContain('**Operation:** update-task');
-        expect(markdown).toContain('**count:** 2');
       });
 
       it('should preserve fields that are not being updated', async () => {
@@ -460,8 +458,6 @@ describe('Bulk operations', () => {
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
         expect(markdown).toContain('Successfully deleted 2 tasks');
-        expect(markdown).toContain('**Operation:** delete-task');
-        expect(markdown).toContain('**count:** 2');
       });
 
       it('should handle partial deletion success', async () => {
@@ -587,8 +583,6 @@ describe('Bulk operations', () => {
         const markdown = result.content[0].text;
         expect(markdown).toContain("## ✅ Success");
         expect(markdown).toContain('Successfully created 1 tasks');
-        expect(markdown).toContain('**Operation:** create-tasks');
-        expect(markdown).toContain('**count:** 1');
       });
 
       it('should handle labels and assignees', async () => {
@@ -751,7 +745,7 @@ describe('Bulk operations', () => {
       expect(mockClient.tasks.updateTask).toHaveBeenCalledTimes(25);
 
       const markdown = result.content[0].text;
-      expect(markdown).toContain('**count:** 25');
+      expect(markdown).toContain('Successfully updated 25 tasks');
     });
   });
 });

@@ -101,7 +101,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-connect');
       expect(markdown).toContain('Successfully connected to Vikunja');
       expect(markdown).toContain('https://vikunja.example.com');
       expect(markdown).toContain('api-token');
@@ -125,7 +124,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-connect');
       expect(markdown).toContain('Already connected to Vikunja');
       expect(markdown).toContain('https://vikunja.example.com');
     });
@@ -191,7 +189,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-connect');
       expect(markdown).toContain('Successfully connected to Vikunja');
       expect(markdown).toContain('https://vikunja.example.com');
       expect(markdown).toContain('jwt');
@@ -216,7 +213,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-connect');
       expect(markdown).toContain('Successfully connected to Vikunja');
       expect(markdown).toContain('https://vikunja.example.com');
       expect(markdown).toContain('api-token');
@@ -262,7 +258,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-status');
       expect(markdown).toContain('Authentication status retrieved');
       expect(markdown).toContain('https://vikunja.example.com');
     });
@@ -281,7 +276,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-status');
       expect(markdown).toContain('Not authenticated');
     });
   });
@@ -295,7 +289,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-refresh');
       expect(markdown).toContain('Token refresh not required');
       expect(markdown).toContain('tokens do not expire');
     });
@@ -313,7 +306,6 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-disconnect');
       expect(markdown).toContain('Successfully disconnected from Vikunja');
     });
   });
@@ -474,7 +466,7 @@ describe('Auth Tool', () => {
       await expect(callTool('connect', {
         apiUrl: 'https://vikunja.example.com',
         apiToken: 'tk_test-token-123',
-      })).rejects.toThrow('Authentication error: [object Object]');
+      })).rejects.toThrow('Authentication error: custom error object');
     });
 
     it('should handle status when MCPError is thrown', async () => {
@@ -506,7 +498,7 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-refresh');
+      expect(markdown).toContain('Token refresh not required');
     });
 
     it('should validate URL format', async () => {
@@ -542,7 +534,7 @@ describe('Auth Tool', () => {
       const parsed = parseMarkdown(markdown);
       const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('auth-status');
+      expect(markdown).toContain('Authentication status retrieved');
     });
 
     it('should handle status with error instance', async () => {

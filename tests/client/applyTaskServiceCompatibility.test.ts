@@ -73,7 +73,7 @@ describe('applyTaskServiceCompatibility', () => {
       3,
       '/projects/13/views/52/buckets/39/tasks',
       'POST',
-      { task_id: 35 },
+      { task_id: 35, bucket_id: 39, project_view_id: 52 },
     );
     expect(request).toHaveBeenNthCalledWith(
       4,

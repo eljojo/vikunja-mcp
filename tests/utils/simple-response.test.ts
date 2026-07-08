@@ -1,159 +1,105 @@
 /**
  * Tests for simple-response task formatting
- * Ensures tasks are displayed with useful information
+ * Task lists render as compact, per-project markdown tables with dynamic
+ * columns; single detail fields live in the table cells, not per-item blocks.
  */
 
 import { formatSuccessMessage, createSuccessResponse, createErrorResponse } from '../../src/utils/simple-response';
 import type { Task } from '../../src/types/vikunja';
 
 describe('simple-response - Task Formatting', () => {
-  describe('formatSuccessMessage with tasks', () => {
-    it('should format task with all fields', () => {
+  describe('formatSuccessMessage with tasks (grouped table)', () => {
+    it('renders a task in a per-project table with dynamic columns', () => {
       const task: Task = {
         id: 1,
         project_id: 5,
+        project_title: 'Backend',
         bucket_id: 9,
+        bucket_title: 'In Progress',
         title: 'Fix critical bug',
         description: 'Users cannot login',
         done: false,
         priority: 5,
         due_date: '2025-01-30T17:00:00Z',
         percent_done: 25,
-        labels: [
-          { id: 1, title: 'urgent', hex_color: '#ff0000' }
-        ],
-        assignees: [
-          { id: 1, username: 'johndoe', email: 'john@example.com' }
-        ],
+        labels: [{ id: 1, title: 'urgent', hex_color: '#ff0000' }],
+        assignees: [{ id: 1, username: 'johndoe', email: 'john@example.com' }],
         repeat_after: 0,
         created: '2025-01-28T10:00:00Z',
-        updated: '2025-01-28T14:30:00Z'
+        updated: '2025-01-28T14:30:00Z',
       };
 
-      const result = formatSuccessMessage(
-        'list-tasks',
-        'Found 1 task',
-        { tasks: [task] },
-        { count: 1 }
-      );
+      const result = formatSuccessMessage('list-tasks', 'Found 1 task', { tasks: [task] }, { count: 1 });
 
+      expect(result).toContain('## ✅ Success');
+      expect(result).toContain('**Results:** 1 item(s)');
+      // Resolved project name carried in the group header (not repeated per row)
+      expect(result).toContain('📁 Backend (ID: 5)');
+      // Dynamic columns present because these fields are populated
+      expect(result).toContain('| ID |');
+      expect(result).toContain('Column');
+      expect(result).toContain('Due');
+      expect(result).toContain('Pri');
+      expect(result).toContain('Labels');
+      expect(result).toContain('Notes');
+      // Cell values
       expect(result).toContain('Fix critical bug');
-      expect(result).toContain('(ID: 1)');
-      expect(result).toContain('❌ Not Done');
-      expect(result).toContain('⭐⭐⭐⭐⭐ (5/5)');
-      expect(result).toContain('**Due:**');
-      expect(result).toContain('2025-01-30T17:00:00Z');
-      expect(result).toContain('**Progress:**');
-      expect(result).toContain('25%');
-      expect(result).toContain('**Project:**');
-      expect(result).toContain('**Bucket:**');
-      expect(result).toContain('9');
-      expect(result).toContain('**Labels:**');
+      expect(result).toContain('In Progress');
+      expect(result).toContain('2025-01-30');
       expect(result).toContain('urgent');
-      expect(result).toContain('**Assignees:**');
-      expect(result).toContain('johndoe');
-      expect(result).toContain('**Description:**');
       expect(result).toContain('Users cannot login');
     });
 
-    it('should format task with minimal fields', () => {
+    it('omits columns for unpopulated fields', () => {
       const task: Task = {
         id: 2,
         project_id: 5,
         title: 'Simple task',
         done: true,
-        repeat_after: 0
+        repeat_after: 0,
       };
 
-      const result = formatSuccessMessage(
-        'list-tasks',
-        'Found 1 task',
-        { tasks: [task] },
-        { count: 1 }
-      );
+      const result = formatSuccessMessage('list-tasks', 'Found 1 task', { tasks: [task] }, { count: 1 });
 
       expect(result).toContain('Simple task');
-      expect(result).toContain('(ID: 2)');
-      expect(result).toContain('✅ Done');
-      // Should not show priority if not set
-      expect(result).not.toContain('Priority:');
+      // A title-only task collapses to just ID + Task columns
+      expect(result).toContain('| ID | Task |');
+      expect(result).not.toContain('Due');
+      expect(result).not.toContain('Pri');
+      expect(result).not.toContain('Labels');
     });
 
-    it('should format multiple tasks', () => {
+    it('shows a done column only when done states are mixed', () => {
       const tasks: Task[] = [
-        {
-          id: 1,
-          project_id: 5,
-          title: 'Task 1',
-          description: 'First task',
-          done: false,
-          priority: 5,
-          due_date: '2025-01-30T17:00:00Z',
-          repeat_after: 0
-        },
-        {
-          id: 2,
-          project_id: 5,
-          title: 'Task 2',
-          done: true,
-          priority: 2,
-          labels: [{ id: 1, title: 'low-priority' }],
-          assignees: [{ id: 2, username: 'user2' }],
-          repeat_after: 0
-        }
+        { id: 1, project_id: 5, title: 'Task 1', done: false, repeat_after: 0 },
+        { id: 2, project_id: 5, title: 'Task 2', done: true, repeat_after: 0 },
       ];
 
-      const result = formatSuccessMessage(
-        'list-tasks',
-        'Found 2 tasks',
-        { tasks: tasks },
-        { count: 2 }
-      );
+      const result = formatSuccessMessage('list-tasks', 'Found 2 tasks', { tasks }, { count: 2 });
 
-      // First task
-      expect(result).toContain('### 1. **Task 1**');
-      expect(result).toContain('**Description:**');
+      // Mixed done states → the ✓ column appears with a checkmark for the done task
+      expect(result).toContain('✓');
+      expect(result).toContain('✅');
+      expect(result).toContain('Task 1');
+      expect(result).toContain('Task 2');
+    });
+
+    it('renders multiple tasks as multiple rows under one project group', () => {
+      const tasks: Task[] = [
+        { id: 1, project_id: 5, title: 'Task 1', description: 'First task', priority: 5, repeat_after: 0 },
+        { id: 2, project_id: 5, title: 'Task 2', priority: 2, repeat_after: 0 },
+      ];
+
+      const result = formatSuccessMessage('list-tasks', 'Found 2 tasks', { tasks }, { count: 2 });
+
+      expect(result).toContain('📁 Project 5 — 2 task(s)');
+      expect(result).toContain('Task 1');
+      expect(result).toContain('Task 2');
       expect(result).toContain('First task');
-      expect(result).toContain('⭐⭐⭐⭐⭐ (5/5)');
-
-      // Second task
-      expect(result).toContain('### 2. **Task 2**');
-      expect(result).toContain('✅ Done');
-      expect(result).toContain('⭐⭐ (2/5)');
-      expect(result).toContain('**Labels:**');
-      expect(result).toContain('low-priority');
-      expect(result).toContain('**Assignees:**');
-      expect(result).toContain('user2');
+      expect(result).toContain('Pri');
     });
 
-    it('should format task with multiple assignees', () => {
-      const task: Task = {
-        id: 1,
-        project_id: 5,
-        title: 'Team task',
-        done: false,
-        assignees: [
-          { id: 1, username: 'alice', email: 'alice@example.com' },
-          { id: 2, username: 'bob', email: 'bob@example.com' },
-          { id: 3, username: 'charlie' } // No email
-        ],
-        repeat_after: 0
-      };
-
-      const result = formatSuccessMessage(
-        'list-tasks',
-        'Found 1 task',
-        { tasks: [task] },
-        { count: 1 }
-      );
-
-      expect(result).toContain('**Assignees:**');
-      expect(result).toContain('alice (alice@example.com)');
-      expect(result).toContain('bob (bob@example.com)');
-      expect(result).toContain('charlie');
-    });
-
-    it('should format task with multiple labels', () => {
+    it('lists all labels in the Labels column', () => {
       const task: Task = {
         id: 1,
         project_id: 5,
@@ -162,46 +108,31 @@ describe('simple-response - Task Formatting', () => {
         labels: [
           { id: 1, title: 'urgent', hex_color: '#ff0000' },
           { id: 2, title: 'bug', hex_color: '#ff6600' },
-          { id: 3, title: 'frontend', hex_color: '#0066ff' }
+          { id: 3, title: 'frontend', hex_color: '#0066ff' },
         ],
-        repeat_after: 0
+        repeat_after: 0,
       };
 
-      const result = formatSuccessMessage(
-        'list-tasks',
-        'Found 1 task',
-        { tasks: [task] },
-        { count: 1 }
-      );
+      const result = formatSuccessMessage('list-tasks', 'Found 1 task', { tasks: [task] }, { count: 1 });
 
-      expect(result).toContain('**Labels:**');
+      expect(result).toContain('Labels');
       expect(result).toContain('urgent');
       expect(result).toContain('bug');
       expect(result).toContain('frontend');
     });
 
-    it('should not display fields when they are falsy', () => {
-      const task: Task = {
-        id: 1,
-        project_id: 5,
-        title: 'Minimal task',
-        done: false,
-        priority: 0, // Zero priority
-        percent_done: 0, // Zero progress
-        repeat_after: 0
-      };
+    it('groups tasks by project with a header per project', () => {
+      const tasks: Task[] = [
+        { id: 1, project_id: 5, project_title: 'Backend', title: 'API task', done: false, repeat_after: 0 },
+        { id: 2, project_id: 7, project_title: 'Frontend', title: 'UI task', done: false, repeat_after: 0 },
+      ];
 
-      const result = formatSuccessMessage(
-        'list-tasks',
-        'Found 1 task',
-        { tasks: [task] },
-        { count: 1 }
-      );
+      const result = formatSuccessMessage('list-tasks', 'Found 2 tasks', { tasks }, { count: 2 });
 
-      expect(result).toContain('Minimal task');
-      expect(result).toContain('❌ Not Done');
-      expect(result).not.toContain('Priority:');
-      expect(result).not.toContain('Progress:');
+      expect(result).toContain('📁 Backend (ID: 5)');
+      expect(result).toContain('📁 Frontend (ID: 7)');
+      expect(result).toContain('API task');
+      expect(result).toContain('UI task');
     });
   });
 
@@ -309,8 +240,10 @@ describe('simple-response - Task Formatting', () => {
         { taskId: 1 }
       );
 
+      expect(response.content).toContain('## ✅ Success');
       expect(response.content).toContain('Test task');
-      expect(response.content).toContain('(ID: 1)');
+      // Envelope metadata still carries operation/taskId even though they are
+      // suppressed from the rendered content.
       expect(response.metadata).toBeDefined();
       expect(response.metadata?.success).toBe(true);
       expect(response.metadata?.operation).toBe('get-task');
@@ -349,7 +282,7 @@ describe('simple-response - Task Formatting', () => {
       expect(result).toContain('0 item(s)');
     });
 
-    it('should handle more than 10 items (should not display)', () => {
+    it('renders all items when at or below the render cap', () => {
       const tasks: Task[] = Array.from({ length: 15 }, (_, i) => ({
         id: i + 1,
         project_id: 1,
@@ -365,15 +298,15 @@ describe('simple-response - Task Formatting', () => {
         { count: 15 }
       );
 
-      expect(result).toContain('**Results:**');
-      expect(result).toContain('15 item(s)');
-      // Items should not be displayed when > 10
-      expect(result).not.toContain('### 1.');
-      expect(result).not.toContain('Task 1');
+      expect(result).toContain('**Results:** 15 item(s)');
+      // The cap is 100, so all 15 render (first and last present)
+      expect(result).toContain('Task 1');
+      expect(result).toContain('Task 15');
+      expect(result).not.toContain('Showing first');
     });
 
-    it('should handle exactly 10 items (should display)', () => {
-      const tasks: Task[] = Array.from({ length: 10 }, (_, i) => ({
+    it('truncates and notes the remainder above the render cap', () => {
+      const tasks: Task[] = Array.from({ length: 105 }, (_, i) => ({
         id: i + 1,
         project_id: 1,
         title: `Task ${i + 1}`,
@@ -383,18 +316,13 @@ describe('simple-response - Task Formatting', () => {
 
       const result = formatSuccessMessage(
         'list-tasks',
-        'Found 10 tasks',
+        'Found 105 tasks',
         { tasks },
-        { count: 10 }
+        { count: 105 }
       );
 
-      expect(result).toContain('**Results:**');
-      expect(result).toContain('10 item(s)');
-      // Items should be displayed when <= 10
-      expect(result).toContain('### 1.');
-      expect(result).toContain('Task 1');
-      expect(result).toContain('### 10.');
-      expect(result).toContain('Task 10');
+      expect(result).toContain('**Results:** 105 item(s)');
+      expect(result).toContain('Showing first 100 of 105');
     });
   });
 });
