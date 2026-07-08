@@ -1,0 +1,55 @@
+{
+  "manifest_version": "0.3",
+  "name": "vikunja-mcp",
+  "display_name": "Vikunja",
+  "version": "0.2.2",
+  "description": "Manage a Vikunja instance — tasks, projects, Kanban boards, labels, and filters — from your AI assistant.",
+  "long_description": "MCP server for Vikunja task management. Create and update tasks, organize projects and hierarchies, manage Kanban boards (columns/buckets and task placement), apply column templates, and run saved filters. Fork of democratize-technology/vikunja-mcp with the vikunja_kanban tool and reliability fixes.",
+  "author": {
+    "name": "José Albornoz",
+    "url": "https://github.com/eljojo"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eljojo/vikunja-mcp"
+  },
+  "homepage": "https://github.com/eljojo/vikunja-mcp#readme",
+  "documentation": "https://github.com/eljojo/vikunja-mcp#readme",
+  "support": "https://github.com/eljojo/vikunja-mcp/issues",
+  "license": "MIT",
+  "keywords": ["vikunja", "task-management", "kanban", "todo", "productivity"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "VIKUNJA_URL": "${user_config.vikunja_url}",
+        "VIKUNJA_API_TOKEN": "${user_config.api_token}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "user_config": {
+    "vikunja_url": {
+      "type": "string",
+      "title": "Vikunja API URL",
+      "description": "Your Vikunja instance's API base URL, including /api/v1 — e.g. https://vikunja.example.com/api/v1",
+      "required": true
+    },
+    "api_token": {
+      "type": "string",
+      "title": "API token or JWT",
+      "description": "A tk_ API token (Vikunja → Settings → API Tokens) or a JWT. A JWT additionally enables the user and export tools.",
+      "required": true,
+      "sensitive": true
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=20.0.0"
+    }
+  }
+}

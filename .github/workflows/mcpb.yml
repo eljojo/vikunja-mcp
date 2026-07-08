@@ -1,0 +1,47 @@
+name: Build MCP bundle
+
+# Cut a release bundle when a version tag is pushed, e.g. `npm version patch`
+# (which bumps package.json and creates the matching vX.Y.Z tag), then
+# `git push --follow-tags`.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write # needed to create/attach the release asset
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Sync manifest version to package.json
+        run: |
+          node -e "const fs=require('fs');const m=require('./manifest.json');m.version=require('./package.json').version;fs.writeFileSync('./manifest.json',JSON.stringify(m,null,2)+'\n')"
+
+      - name: Prune to production dependencies
+        # Strip devDeps from the already-built tree so the bundle's node_modules
+        # stays lean. `prune` (unlike `ci --omit=dev`) does not re-run the
+        # `prepare` build script, which needs devDeps. dist/ is untouched.
+        run: npm prune --omit=dev
+
+      - name: Pack .mcpb
+        run: npx --yes @anthropic-ai/mcpb pack . vikunja-mcp.mcpb
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vikunja-mcp.mcpb

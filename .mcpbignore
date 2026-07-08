@@ -1,0 +1,25 @@
+# Source, tests, and tooling are not needed at runtime — the bundle ships the
+# compiled dist/ plus production node_modules only.
+src/
+tests/
+scripts/
+docs/
+coverage/
+.github/
+.git/
+.vscode/
+
+# Config / build artifacts
+tsconfig*.json
+eslint.config.mjs
+.eslintrc*
+.prettierrc*
+*.tsbuildinfo
+.env
+.env.*
+
+# Dev-only files
+CONTRIBUTING.md
+CHANGELOG.md
+*.test.ts
+*.spec.ts

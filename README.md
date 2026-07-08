@@ -98,9 +98,17 @@ Then point the config at the built entrypoint (use an absolute path):
 }
 ```
 
+### Option 3 — Claude Desktop bundle (`.mcpb`)
+
+Claude Desktop can install this as a one-click bundle — no JSON editing. Download
+`vikunja-mcp.mcpb` from the [latest release](https://github.com/eljojo/vikunja-mcp/releases/latest),
+then in Claude Desktop open **Settings → Extensions** and drag the file in (or just open it). It
+prompts for your Vikunja URL and API token on install. The bundle is a single cross-platform build
+(macOS, Windows, Linux) produced by the `Build MCP bundle` GitHub Action on each `v*` tag.
+
 > The upstream `@democratize-technology/vikunja-mcp` npm package does **not** include this fork's
-> Kanban tool or fixes — use Option 1 or 2 above to get them. (`VIKUNJA_API_TOKEN` accepts a `tk_`
-> API token or a JWT; see [Authentication Methods](#authentication-methods).)
+> Kanban tool or fixes — use Option 1, 2, or 3 above to get them. (`VIKUNJA_API_TOKEN` accepts a
+> `tk_` API token or a JWT; see [Authentication Methods](#authentication-methods).)
 
 ## Authentication Methods
 
