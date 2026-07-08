@@ -4,6 +4,7 @@ import {
   enrichTasksWithBucketIds,
   getBucketsForView,
   moveTaskToBucket,
+  updateTaskPosition,
 } from '../../src/client/applyTaskServiceCompatibility';
 import type { TaskService } from 'node-vikunja';
 
@@ -81,6 +82,27 @@ describe('applyTaskServiceCompatibility', () => {
       'GET',
       undefined,
       { params: { page: 1, per_page: 500 } },
+    );
+  });
+
+  it('posts a task position to the per-view position endpoint', async () => {
+    const request = jest.fn().mockResolvedValue({ task_id: 7, project_view_id: 3, position: 128 });
+    const service = { getAllTasks: jest.fn(), request } as unknown as TaskService;
+
+    applyTaskServiceCompatibility(service);
+    await updateTaskPosition(service, 7, 3, 128);
+
+    expect(request).toHaveBeenCalledWith(
+      '/tasks/7/position',
+      'POST',
+      { project_view_id: 3, position: 128 },
+    );
+  });
+
+  it('throws when the service does not support task positioning', () => {
+    const service = { getAllTasks: jest.fn() } as unknown as TaskService;
+    expect(() => updateTaskPosition(service, 7, 3, 128)).toThrow(
+      'does not support task positioning',
     );
   });
 

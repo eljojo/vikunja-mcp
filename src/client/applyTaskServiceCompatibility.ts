@@ -41,6 +41,13 @@ export interface BucketInput {
 }
 
 /** Minimal project view shape. Vikunja reports the kind as `view_kind`. */
+/** A task's sort position within one project view (Vikunja stores positions per view). */
+export interface TaskPosition {
+  task_id: number;
+  project_view_id: number;
+  position: number;
+}
+
 export interface ProjectViewLite {
   id: number;
   project_id: number;
@@ -93,6 +100,11 @@ type TaskServiceWithBucketSupport = TaskService & {
     viewId: number,
     view: ProjectViewLite,
   ): Promise<ProjectViewLite>;
+  updateTaskPosition(
+    taskId: number,
+    projectViewId: number,
+    position: number,
+  ): Promise<TaskPosition>;
 };
 
 function hasRequestMethod(service: unknown): service is TaskServiceWithRequest {
@@ -203,6 +215,16 @@ export function applyTaskServiceCompatibility(service: unknown): void {
     'DELETE',
   ).then(() => undefined);
 
+  service.updateTaskPosition = (
+    taskId: number,
+    projectViewId: number,
+    position: number,
+  ): Promise<TaskPosition> => service.request<TaskPosition>(
+    `/tasks/${taskId}/position`,
+    'POST',
+    { project_view_id: projectViewId, position },
+  );
+
   service.updateView = (
     projectId: number,
     viewId: number,
@@ -275,6 +297,18 @@ export function updateView(
   view: ProjectViewLite,
 ): Promise<ProjectViewLite> {
   return asBucketService(service).updateView(projectId, viewId, view);
+}
+
+export function updateTaskPosition(
+  service: TaskService,
+  taskId: number,
+  projectViewId: number,
+  position: number,
+): Promise<TaskPosition> {
+  if (!('updateTaskPosition' in service) || typeof service.updateTaskPosition !== 'function') {
+    throw new Error('The Vikunja task service does not support task positioning');
+  }
+  return (service as TaskServiceWithBucketSupport).updateTaskPosition(taskId, projectViewId, position);
 }
 
 export function moveTaskToBucket(

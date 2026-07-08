@@ -32,6 +32,7 @@ import {
   deleteBucket,
   updateView,
   moveTaskToBucket,
+  updateTaskPosition,
   type TaskBucket,
   type ProjectViewLite,
   type BucketInput,
@@ -255,6 +256,7 @@ export function registerKanbanTool(
         'delete-bucket',
         'move-task',
         'bulk-move',
+        'set-task-position',
         'set-view-config',
         'apply-template',
       ]),
@@ -408,6 +410,22 @@ export function registerKanbanTool(
                   result.failed.map((f) => `- task ${f.id}: ${f.reason}`).join('\n')
                 : '';
             return text(summary + failReport);
+          }
+
+          case 'set-task-position': {
+            // Orders a task WITHIN its column. Position is a float and is stored per
+            // view — lower sorts higher. To drop a task between two neighbours, read
+            // their positions (list-buckets returns tasks in order) and pass the
+            // midpoint. Vikunja recalculates the whole view if positions get too close.
+            if (args.taskId === undefined || args.position === undefined) {
+              throw new MCPError(
+                ErrorCode.VALIDATION_ERROR,
+                'taskId and position are required to set a task position',
+              );
+            }
+            const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
+            await updateTaskPosition(service, args.taskId, viewId, args.position);
+            return text(`Set task ${args.taskId} to position ${args.position} in view ${viewId}`);
           }
 
           case 'set-view-config': {
