@@ -145,7 +145,7 @@ export function applyTaskServiceCompatibility(service: unknown): void {
   ): Promise<TaskBucketRelation> => service.request<TaskBucketRelation>(
     `/projects/${projectId}/views/${viewId}/buckets/${bucketId}/tasks`,
     'POST',
-    { task_id: taskId },
+    { task_id: taskId, bucket_id: bucketId, project_view_id: viewId },
   );
 
   service.getBucketsForView = (

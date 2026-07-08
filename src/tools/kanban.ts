@@ -5,6 +5,14 @@
  * Buckets belong to a project's Kanban *view*, so every op needs a viewId. It is
  * auto-resolved to the project's `view_kind === 'kanban'` view when not given, so
  * callers work in terms of project + column name, not opaque view/bucket ids.
+ *
+ * Safety invariants (a board must never be left in an unintended state):
+ * - Deleting a bucket first relocates its tasks to a live bucket; if any task
+ *   can't be moved, the delete is aborted (preserve data over partial success).
+ * - Bulk/relocation moves run sequentially, retry once, and are verified by
+ *   re-reading the board — silent partial moves are reported as failures.
+ * - Destructive ops (`delete-bucket`, `apply-template` with removeExtra) accept
+ *   `dryRun` to preview exactly what will change before committing.
  */
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -15,7 +23,6 @@ import type { VikunjaClientFactory } from '../client/VikunjaClientFactory';
 import { MCPError, ErrorCode } from '../types';
 import { getClientFromContext, setGlobalClientFactory } from '../client';
 import { createAuthRequiredError } from '../utils/error-handler';
-import { createSuccessResponse, formatMcpResponse } from '../utils/simple-response';
 import {
   getProjectViews,
   getViewBuckets,
@@ -32,6 +39,11 @@ import {
 
 /** Vikunja orders buckets by a float `position`; this is its native step. */
 const POSITION_STEP = 65536;
+
+interface MoveOutcome {
+  moved: number[];
+  failed: Array<{ id: number; reason: string }>;
+}
 
 function text(content: string): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text' as const, text: content }] };
@@ -50,15 +62,11 @@ function bucketInput(fields: {
   return out;
 }
 
-/** Resolve the project's Kanban view id, or throw if it has none. */
 async function resolveKanbanViewId(service: TaskService, projectId: number): Promise<number> {
   const views = (await getProjectViews(service, projectId)) ?? [];
   const kanban = views.find((v) => v.view_kind === 'kanban');
   if (!kanban) {
-    throw new MCPError(
-      ErrorCode.NOT_FOUND,
-      `Project ${projectId} has no Kanban view`,
-    );
+    throw new MCPError(ErrorCode.NOT_FOUND, `Project ${projectId} has no Kanban view`);
   }
   return kanban.id;
 }
@@ -72,24 +80,142 @@ async function resolveView(service: TaskService, projectId: number, viewId: numb
   return view;
 }
 
-/** Buckets sorted by their display order. */
 async function orderedBuckets(service: TaskService, projectId: number, viewId: number): Promise<TaskBucket[]> {
   const buckets = (await getViewBuckets(service, projectId, viewId)) ?? [];
   return [...buckets].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 }
 
-/** Task counts per bucket id, read from the board's tasks-by-bucket endpoint. */
-async function bucketCounts(service: TaskService, projectId: number, viewId: number): Promise<Map<number, number>> {
-  const counts = new Map<number, number>();
+/** Buckets with their tasks (board endpoint) — the source of truth for placement. */
+async function bucketsWithTasks(service: TaskService, projectId: number, viewId: number): Promise<TaskBucket[]> {
+  return (await getBucketsForView(service, projectId, viewId)) ?? [];
+}
+
+/** Map of taskId -> bucketId for a view, from the board's tasks-by-bucket endpoint. */
+function taskBucketMapFrom(buckets: TaskBucket[]): Map<number, number> {
+  const map = new Map<number, number>();
+  for (const bucket of buckets) {
+    for (const task of bucket.tasks ?? []) {
+      if (task.id !== undefined) {
+        map.set(task.id, bucket.id);
+      }
+    }
+  }
+  return map;
+}
+
+function taskIdsOf(bucket: TaskBucket | undefined): number[] {
+  return (bucket?.tasks ?? []).map((t) => t.id).filter((id): id is number => id !== undefined);
+}
+
+/**
+ * Move tasks into a bucket one at a time (retry once each), then re-read the
+ * board and confirm each actually landed — so a silent partial move surfaces as
+ * a failure rather than corrupting the board.
+ */
+async function moveTasks(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+  taskIds: number[],
+  destBucketId: number,
+): Promise<MoveOutcome> {
+  const moved: number[] = [];
+  const failed: Array<{ id: number; reason: string }> = [];
+
+  for (const id of taskIds) {
+    let lastError: unknown;
+    let ok = false;
+    for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+      try {
+        await moveTaskToBucket(service, projectId, viewId, destBucketId, id);
+        ok = true;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (ok) {
+      moved.push(id);
+    } else {
+      failed.push({ id, reason: lastError instanceof Error ? lastError.message : String(lastError) });
+    }
+  }
+
+  // Post-condition check: confirm the moves actually took.
   try {
-    const withTasks = (await getBucketsForView(service, projectId, viewId)) ?? [];
-    for (const bucket of withTasks) {
-      counts.set(bucket.id, Array.isArray(bucket.tasks) ? bucket.tasks.length : 0);
+    const map = taskBucketMapFrom(await bucketsWithTasks(service, projectId, viewId));
+    for (const id of [...moved]) {
+      if (map.get(id) !== destBucketId) {
+        moved.splice(moved.indexOf(id), 1);
+        failed.push({ id, reason: `move reported success but task is in bucket ${map.get(id) ?? 'none'}` });
+      }
     }
   } catch {
-    // counts are best-effort
+    // verification best-effort; keep the optimistic result
   }
-  return counts;
+
+  return { moved, failed };
+}
+
+/**
+ * Delete a bucket without orphaning its tasks: relocate them to a live bucket
+ * first (the given destination, else the view default, else any other bucket),
+ * aborting if any task can't be moved. Fixes view default/done refs if they
+ * pointed at the deleted bucket.
+ */
+async function deleteBucketSafely(
+  service: TaskService,
+  projectId: number,
+  viewId: number,
+  bucketId: number,
+  view: ProjectViewLite,
+  buckets: TaskBucket[],
+  intoBucketId?: number,
+): Promise<{ movedTasks: number[]; destination?: number }> {
+  const liveIds = buckets.map((b) => b.id);
+  const target = buckets.find((b) => b.id === bucketId);
+  if (!target) {
+    throw new MCPError(ErrorCode.NOT_FOUND, `Bucket ${bucketId} not found in view ${viewId}`);
+  }
+  const taskIds = taskIdsOf(target);
+
+  let destination = intoBucketId ?? view.default_bucket_id;
+  if (destination === undefined || destination === 0 || destination === bucketId || !liveIds.includes(destination)) {
+    destination = liveIds.find((id) => id !== bucketId);
+  }
+
+  if (taskIds.length > 0) {
+    if (destination === undefined) {
+      throw new MCPError(
+        ErrorCode.VALIDATION_ERROR,
+        `Cannot delete bucket ${bucketId}: it holds ${taskIds.length} task(s) and there is no other column to move them to. Nothing was deleted.`,
+      );
+    }
+    const result = await moveTasks(service, projectId, viewId, taskIds, destination);
+    if (result.failed.length > 0) {
+      throw new MCPError(
+        ErrorCode.INTERNAL_ERROR,
+        `Aborted delete of bucket ${bucketId}: could not relocate ${result.failed.length} task(s) ` +
+          `(${result.failed.map((f) => f.id).join(', ')}). Nothing was deleted, no tasks orphaned.`,
+      );
+    }
+  }
+
+  await deleteBucket(service, projectId, viewId, bucketId);
+
+  const patch: Partial<ProjectViewLite> = {};
+  if (view.default_bucket_id === bucketId) patch.default_bucket_id = destination ?? 0;
+  if (view.done_bucket_id === bucketId) patch.done_bucket_id = 0;
+  if (Object.keys(patch).length > 0) {
+    await updateView(service, projectId, viewId, { ...view, ...patch });
+  }
+
+  const out: { movedTasks: number[]; destination?: number } = {
+    movedTasks: taskIds.length > 0 ? taskIds : [],
+  };
+  if (destination !== undefined) {
+    out.destination = destination;
+  }
+  return out;
 }
 
 function formatBucketTable(buckets: TaskBucket[], view: ProjectViewLite, counts: Map<number, number>): string {
@@ -118,7 +244,8 @@ export function registerKanbanTool(
     'vikunja_kanban',
     'Manage a project Kanban board: list views, list/create/update/delete columns (buckets), ' +
       'move tasks between columns, set the default/done column, and apply a column template. ' +
-      'viewId auto-resolves to the project Kanban view when omitted.',
+      'viewId auto-resolves to the project Kanban view when omitted. Destructive ops relocate ' +
+      'tasks before deleting and accept dryRun to preview.',
     {
       operation: z.enum([
         'list-views',
@@ -134,19 +261,19 @@ export function registerKanbanTool(
       projectId: z.number().int().positive(),
       viewId: z.number().int().positive().optional(),
       bucketId: z.number().int().positive().optional(),
+      intoBucketId: z.number().int().positive().optional(),
       taskId: z.number().int().positive().optional(),
       taskIds: z.array(z.number().int().positive()).optional(),
       title: z.string().min(1).optional(),
       position: z.number().optional(),
       limit: z.number().int().min(0).optional(),
-      // set-view-config
       defaultBucketId: z.number().int().positive().optional(),
       doneBucketId: z.number().int().positive().optional(),
-      // apply-template
       columns: z.array(z.string().min(1)).optional(),
       doneColumn: z.string().optional(),
       defaultColumn: z.string().optional(),
       removeExtra: z.boolean().optional(),
+      dryRun: z.boolean().optional(),
     },
     async (args) => {
       if (!authManager.isAuthenticated()) {
@@ -165,21 +292,20 @@ export function registerKanbanTool(
             const views = (await getProjectViews(service, projectId)) ?? [];
             const rows = views.map((v) => `| ${v.id} | ${v.title} | ${v.view_kind} |`).join('\n');
             return text(
-              `## Views for project ${projectId}\n\n` +
-                `| View ID | Title | Kind |\n| --- | --- | --- |\n${rows}\n`,
+              `## Views for project ${projectId}\n\n| View ID | Title | Kind |\n| --- | --- | --- |\n${rows}\n`,
             );
           }
 
           case 'list-buckets': {
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            const [view, buckets, counts] = await Promise.all([
+            const [view, buckets, withTasks] = await Promise.all([
               resolveView(service, projectId, viewId),
               orderedBuckets(service, projectId, viewId),
-              bucketCounts(service, projectId, viewId),
+              bucketsWithTasks(service, projectId, viewId),
             ]);
+            const counts = new Map(withTasks.map((b) => [b.id, taskIdsOf(b).length]));
             return text(
-              `## Kanban columns — project ${projectId}, view ${viewId}\n\n` +
-                `${formatBucketTable(buckets, view, counts)}\n`,
+              `## Kanban columns — project ${projectId}, view ${viewId}\n\n${formatBucketTable(buckets, view, counts)}\n`,
             );
           }
 
@@ -194,13 +320,7 @@ export function registerKanbanTool(
               viewId,
               bucketInput({ title: args.title, position: args.position, limit: args.limit }),
             );
-            const response = createSuccessResponse(
-              'create-bucket',
-              `Created column "${args.title}" (bucket ${created.id}) in project ${projectId}`,
-              undefined,
-              { bucketId: created.id, viewId, projectId },
-            );
-            return { content: formatMcpResponse(response) };
+            return text(`Created column "${args.title}" (bucket ${created.id}) in project ${projectId}, view ${viewId}`);
           }
 
           case 'update-bucket': {
@@ -208,7 +328,6 @@ export function registerKanbanTool(
               throw new MCPError(ErrorCode.VALIDATION_ERROR, 'bucketId is required to update a bucket');
             }
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            // Read-merge-write so unspecified fields aren't reset.
             const existing = (await getViewBuckets(service, projectId, viewId)) ?? [];
             const current = existing.find((b) => b.id === args.bucketId);
             if (!current) {
@@ -228,8 +347,35 @@ export function registerKanbanTool(
               throw new MCPError(ErrorCode.VALIDATION_ERROR, 'bucketId is required to delete a bucket');
             }
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            await deleteBucket(service, projectId, viewId, args.bucketId);
-            return text(`Deleted column ${args.bucketId} from project ${projectId} (view ${viewId})`);
+            const [view, withTasks] = await Promise.all([
+              resolveView(service, projectId, viewId),
+              bucketsWithTasks(service, projectId, viewId),
+            ]);
+            const target = withTasks.find((b) => b.id === args.bucketId);
+            if (!target) {
+              throw new MCPError(ErrorCode.NOT_FOUND, `Bucket ${args.bucketId} not found in view ${viewId}`);
+            }
+            const taskIds = taskIdsOf(target);
+            const liveIds = withTasks.map((b) => b.id);
+            let dest = args.intoBucketId ?? view.default_bucket_id;
+            if (dest === undefined || dest === 0 || dest === args.bucketId || !liveIds.includes(dest)) {
+              dest = liveIds.find((id) => id !== args.bucketId);
+            }
+
+            if (args.dryRun) {
+              return text(
+                `## Dry run — delete column "${target.title}" (${args.bucketId})\n\n` +
+                  `- ${taskIds.length} task(s) would move to bucket ${dest ?? '(none available — delete would be refused)'}\n` +
+                  (view.default_bucket_id === args.bucketId ? `- view default column would become ${dest ?? 0}\n` : '') +
+                  (view.done_bucket_id === args.bucketId ? `- view done column would be unset\n` : ''),
+              );
+            }
+
+            const result = await deleteBucketSafely(service, projectId, viewId, args.bucketId, view, withTasks, args.intoBucketId);
+            return text(
+              `Deleted column "${target.title}" (${args.bucketId})` +
+                (result.movedTasks.length > 0 ? `; relocated ${result.movedTasks.length} task(s) to bucket ${result.destination}` : ''),
+            );
           }
 
           case 'move-task': {
@@ -237,8 +383,11 @@ export function registerKanbanTool(
               throw new MCPError(ErrorCode.VALIDATION_ERROR, 'taskId and bucketId are required to move a task');
             }
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            await moveTaskToBucket(service, projectId, viewId, args.bucketId, args.taskId);
-            return text(`Moved task ${args.taskId} to column ${args.bucketId} (project ${projectId})`);
+            const result = await moveTasks(service, projectId, viewId, [args.taskId], args.bucketId);
+            if (result.failed.length > 0) {
+              throw new MCPError(ErrorCode.INTERNAL_ERROR, `Move failed: task ${args.taskId} — ${result.failed[0]?.reason}`);
+            }
+            return text(`Moved task ${args.taskId} to column ${args.bucketId} (verified)`);
           }
 
           case 'bulk-move': {
@@ -246,15 +395,15 @@ export function registerKanbanTool(
               throw new MCPError(ErrorCode.VALIDATION_ERROR, 'taskIds and bucketId are required for bulk-move');
             }
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            const results = await Promise.allSettled(
-              args.taskIds.map((taskId) => moveTaskToBucket(service, projectId, viewId, args.bucketId as number, taskId)),
-            );
-            const moved = results.filter((r) => r.status === 'fulfilled').length;
-            const failed = args.taskIds.length - moved;
-            return text(
-              `Moved ${moved}/${args.taskIds.length} tasks to column ${args.bucketId}` +
-                (failed > 0 ? ` (${failed} failed)` : ''),
-            );
+            const result = await moveTasks(service, projectId, viewId, args.taskIds, args.bucketId);
+            const summary =
+              `Moved ${result.moved.length}/${args.taskIds.length} task(s) to column ${args.bucketId} (verified).`;
+            const failReport =
+              result.failed.length > 0
+                ? `\n\nFailed (${result.failed.length}):\n` +
+                  result.failed.map((f) => `- task ${f.id}: ${f.reason}`).join('\n')
+                : '';
+            return text(summary + failReport);
           }
 
           case 'set-view-config': {
@@ -267,8 +416,7 @@ export function registerKanbanTool(
             };
             await updateView(service, projectId, viewId, updated);
             return text(
-              `Set view ${viewId} config — default bucket ${updated.default_bucket_id}, ` +
-                `done bucket ${updated.done_bucket_id}`,
+              `Set view ${viewId} config — default bucket ${updated.default_bucket_id}, done bucket ${updated.done_bucket_id}`,
             );
           }
 
@@ -276,24 +424,35 @@ export function registerKanbanTool(
             if (!args.columns || args.columns.length === 0) {
               throw new MCPError(ErrorCode.VALIDATION_ERROR, 'columns (ordered list) is required for apply-template');
             }
+            const columns = args.columns;
             const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
-            const existing = await orderedBuckets(service, projectId, viewId);
-            const byTitle = new Map(existing.map((b) => [b.title ?? '', b]));
+            const view = await resolveView(service, projectId, viewId);
+            const existing = await bucketsWithTasks(service, projectId, viewId);
+            const existingByTitle = new Map(existing.map((b) => [b.title ?? '', b]));
+            const extras = existing.filter((b) => !columns.includes(b.title ?? ''));
+
+            if (args.dryRun) {
+              const plan = columns.map((title, i) =>
+                existingByTitle.has(title) ? `reorder "${title}" → #${i + 1}` : `create "${title}" → #${i + 1}`,
+              );
+              const extraPlan = args.removeExtra
+                ? extras.map((e) => `delete "${e.title}" (moving ${taskIdsOf(e).length} task(s) to the default column)`)
+                : extras.map((e) => `keep "${e.title}" (${taskIdsOf(e).length} task(s)) — pass removeExtra to delete`);
+              return text(
+                `## Dry run — apply template to project ${projectId} (view ${viewId})\n\n` +
+                  [...plan, ...extraPlan].map((l) => `- ${l}`).join('\n') + '\n',
+              );
+            }
+
             const log: string[] = [];
             const idByTitle = new Map<string, number>();
 
-            // Create missing / reorder existing to match the given order.
-            for (const [i, title] of args.columns.entries()) {
+            // 1. Create / reorder the template columns.
+            for (const [i, title] of columns.entries()) {
               const position = (i + 1) * POSITION_STEP;
-              const found = byTitle.get(title);
+              const found = existingByTitle.get(title);
               if (found) {
-                await updateBucket(
-                  service,
-                  projectId,
-                  viewId,
-                  found.id,
-                  bucketInput({ title: found.title, position, limit: found.limit }),
-                );
+                await updateBucket(service, projectId, viewId, found.id, bucketInput({ title: found.title, position, limit: found.limit }));
                 idByTitle.set(title, found.id);
                 log.push(`reordered "${title}" (${found.id}) → #${i + 1}`);
               } else {
@@ -303,34 +462,35 @@ export function registerKanbanTool(
               }
             }
 
-            // Extra columns not in the template.
-            const extras = existing.filter((b) => !args.columns?.includes(b.title ?? ''));
+            // 2. Point the view's default/done at valid template columns BEFORE any delete,
+            //    so relocation has a live destination and nothing gets orphaned.
+            const defaultId = (args.defaultColumn ? idByTitle.get(args.defaultColumn) : undefined) ?? idByTitle.get(columns[0] ?? '');
+            const doneId = args.doneColumn ? idByTitle.get(args.doneColumn) : undefined;
+            await updateView(service, projectId, viewId, {
+              ...view,
+              ...(defaultId !== undefined && { default_bucket_id: defaultId }),
+              ...(doneId !== undefined && { done_bucket_id: doneId }),
+            });
+            if (defaultId !== undefined) log.push(`default column → ${defaultId}`);
+            if (doneId !== undefined) log.push(`done column → ${doneId}`);
+
+            // 3. Remove extras (relocating their tasks to the new default first).
             if (args.removeExtra) {
+              const refreshedView = await resolveView(service, projectId, viewId);
               for (const extra of extras) {
-                await deleteBucket(service, projectId, viewId, extra.id);
-                log.push(`deleted extra "${extra.title}" (${extra.id})`);
+                const current = await bucketsWithTasks(service, projectId, viewId);
+                const result = await deleteBucketSafely(service, projectId, viewId, extra.id, refreshedView, current, defaultId);
+                log.push(
+                  `deleted "${extra.title}" (${extra.id})` +
+                    (result.movedTasks.length > 0 ? `, moved ${result.movedTasks.length} task(s) to ${result.destination}` : ''),
+                );
               }
             } else if (extras.length > 0) {
               log.push(`kept ${extras.length} extra column(s): ${extras.map((e) => e.title).join(', ')} (pass removeExtra to delete)`);
             }
 
-            // Default / done bucket by name.
-            const defaultId = args.defaultColumn ? idByTitle.get(args.defaultColumn) : undefined;
-            const doneId = args.doneColumn ? idByTitle.get(args.doneColumn) : undefined;
-            if (defaultId !== undefined || doneId !== undefined) {
-              const view = await resolveView(service, projectId, viewId);
-              await updateView(service, projectId, viewId, {
-                ...view,
-                ...(defaultId !== undefined && { default_bucket_id: defaultId }),
-                ...(doneId !== undefined && { done_bucket_id: doneId }),
-              });
-              if (defaultId !== undefined) log.push(`default column → "${args.defaultColumn}"`);
-              if (doneId !== undefined) log.push(`done column → "${args.doneColumn}"`);
-            }
-
             return text(
-              `## Applied column template to project ${projectId} (view ${viewId})\n\n` +
-                log.map((l) => `- ${l}`).join('\n') + '\n',
+              `## Applied column template to project ${projectId} (view ${viewId})\n\n${log.map((l) => `- ${l}`).join('\n')}\n`,
             );
           }
 
