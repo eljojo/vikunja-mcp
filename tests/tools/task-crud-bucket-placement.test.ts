@@ -86,4 +86,22 @@ describe('createTask - Kanban bucket placement on create', () => {
     expect(service.moveTaskToBucket).not.toHaveBeenCalled();
     expect(service.getProjectViews).not.toHaveBeenCalled();
   });
+
+  it('passes free-text title/description through without blocking or HTML-escaping', async () => {
+    // Regression: these used to be rejected as "potentially dangerous content"
+    // (the word "master") and escaped ("up/down = presets" -> "up&#x2F;down &#x3D; ...").
+    await createTask({
+      projectId: 3,
+      title: 'Update the master clock',
+      description: 'up/down = presets, left/right = time of day',
+    });
+
+    expect(service.createTask).toHaveBeenCalledWith(
+      3,
+      expect.objectContaining({
+        title: 'Update the master clock',
+        description: 'up/down = presets, left/right = time of day',
+      }),
+    );
+  });
 });

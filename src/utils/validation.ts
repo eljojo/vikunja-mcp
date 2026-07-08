@@ -275,6 +275,26 @@ export function sanitizeString(value: string): string {
 }
 
 /**
+ * Normalize free-text user content (task titles / descriptions).
+ *
+ * Unlike {@link sanitizeString}, this does NOT reject or HTML-escape content. Task text is
+ * data: it is sent as JSON to Vikunja's API (no SQL/shell/LDAP injection surface) and
+ * Vikunja sanitizes rich-text server-side. Running it through the injection blocklist
+ * rejects ordinary words ("update the master clock", "drop by the shop", "refactor the
+ * constructor"), and the HTML-escaping corrupts legitimate text ("up/down = presets"
+ * would be stored as "up&#x2F;down &#x3D; presets"). Here we only strip characters that
+ * are never valid in a task field — NUL and other C0/C1 control chars — while keeping
+ * tab, newline, carriage return, emoji, and every printable character intact.
+ */
+export function sanitizeUserText(value: string): string {
+  return value
+    .normalize('NFC')
+    // Strip NUL and other C0/C1 control chars; keep tab (\t), newline (\n), CR (\r).
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '');
+}
+
+/**
  * Validate a field name against Zod schema
  */
 export function validateField(field: string): FilterField {
