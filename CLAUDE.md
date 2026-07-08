@@ -1,244 +1,151 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI agents working in this repository.
 
-## Essential Development Commands
+## What this is
 
-### Pre-Commit Requirements (ALL must pass)
+An **MCP (Model Context Protocol) server** that exposes a [Vikunja](https://vikunja.io)
+task manager as tools an AI assistant can call. It talks to a Vikunja instance over its
+REST API (via the `node-vikunja` client) and speaks MCP over stdio.
+
+It is a TypeScript/Node project, published to npm as `@eljojo/vikunja-mcp` and also
+bundled as a one-click `.mcpb`. The primary real-world consumer is a personal
+life-planning workflow (see `~/code/life`), so **the tools that matter most in practice
+are tasks, projects, kanban, labels, and filters** — that's where to spend care.
+
+> This fork descends from an upstream that shipped in one large "enterprise-grade"
+> commit. Some of the original module structure is heavier than the job needs and some
+> code is under-tested or unused. Prefer deleting dead code over documenting it. If a
+> claim in a comment sounds like marketing ("battle-tested", "production-ready"), treat
+> it as unverified.
+
+## Commands
+
 ```bash
-npm run lint           # ESLint validation
-npm run test:coverage  # Jest with 90%+ branches, 95%+ lines coverage requirement  
-npm run typecheck      # TypeScript compilation check
+npm run dev             # tsx watch — run the server against a live Vikunja for manual testing
+npm run build           # tsc → dist/
+npm run typecheck       # tsc --noEmit
+npm run lint            # eslint src
+npm run test            # jest (silent)
+npm run test:coverage   # jest with coverage
+npm run test:mcp        # integration test against a real Vikunja (scripts/test-mcp.ts)
+npm run format          # prettier over src/ and tests/
+
+# Targeted tests (prefer these while working)
+npx jest tests/tools/labels.test.ts        # one file
+npx jest -t "should create task"           # one test by name
 ```
 
-### Development Workflow
-```bash
-npm run build          # TypeScript compilation to dist/
-npm run dev            # Watch mode development server with tsx
-npm run test:watch     # Jest in watch mode for TDD
+**Before handing work back:** `npm run lint && npm run typecheck && npm run test:coverage`
+must pass. The server is loaded by Claude Desktop from this local checkout — a rebuild
+alone doesn't hot-reload it; the user must restart Claude Desktop to pick up a new build.
 
-# Single test execution
-jest tests/tools/tasks.test.ts              # Specific test file
-jest -t "should create task"                # Specific test case by pattern
-jest tests/tools/tasks-filters.test.ts      # Test specific functionality
-```
+## Architecture
 
-### Build and Release
-```bash
-npm run format         # Prettier formatting for src/ and tests/
-npm run prepare        # Pre-publish build step
-npm run version:patch  # Bump patch version
-```
+### Entry & registration
+- `src/index.ts` — starts `McpServer` on stdio transport.
+- `src/tools/index.ts` — `registerTools()`, the one place tools are wired up.
+  Registration is **conditional**:
+  - Auth and task tools are always registered.
+  - Most tools need a `clientFactory` (an authenticated Vikunja client).
+  - `users` and `export` are registered **only under JWT auth** (an API token can't reach
+    those endpoints).
+- `src/client.ts` / `src/client/` — session-aware Vikunja client construction.
+- `src/auth/AuthManager.ts` — holds the session and auto-detects token type.
 
-## Architecture Overview
+### Auth
+Token format decides everything:
+- **API token** (`tk_*`) — standard auth; excludes user-management and export tools.
+- **JWT** (`eyJ*`) — full access including `users` and `export`.
 
-### MCP Server Pattern
-This is a **Model Context Protocol (MCP) server** that exposes Vikunja task management operations as tools for AI assistants. The architecture follows a modular design with dependency injection:
+Sessions live in memory only; they reset when the server restarts. Credentials are masked
+in logs.
 
-- **Entry Point**: `src/index.ts` - Initializes McpServer with stdio transport
-- **Tool Registry**: `src/tools/index.ts` - Centralized registration with conditional loading
-- **Client Factory**: `src/client.ts` - Session-aware Vikunja API client management
-- **Auth Manager**: Centralized authentication with JWT/API token auto-detection
+### Tool pattern
+Every tool is one `server.tool(name, description, zodSchema, handler)` call, dispatching on
+a `subcommand` / `operation` / `action` enum inside the handler. Zod validates arguments.
+Errors flow through `src/utils/error-handler.ts` and surface as `MCPError` with a code.
 
-### Tool Design Pattern
-Each Vikunja entity follows a consistent **subcommand-based pattern**:
-```typescript
-server.tool('vikunja_tasks', {
-  subcommand: z.enum(['create', 'get', 'update', 'delete', 'list']),
-  // ... Zod validation schema
-}, async (args) => {
-  // Route to specific operation handlers
-})
-```
+### Tool map
 
-### Critical Architecture Decisions (Post-Refactoring v0.2.0)
+| Tool | Ops | Notes |
+|---|---|---|
+| `vikunja_auth` | connect, status, refresh, disconnect | always registered |
+| `vikunja_task_crud` | create, get, update, delete, list | **preferred** task tool; `list` resolves project + kanban column names |
+| `vikunja_tasks` | list, … | older comprehensive tool with a heavier formatter — prefer `task_crud` |
+| `vikunja_task_bulk` | bulk-create, bulk-update, bulk-delete | one API call per task (Vikunja has no batch endpoint) |
+| `vikunja_task_assignees` | assign, unassign, list-assignees | |
+| `vikunja_task_labels` | apply-label, remove-label, list-labels | per-task |
+| `vikunja_task_comments` | comment | |
+| `vikunja_task_reminders` | add-reminder, remove-reminder, list-reminders | |
+| `vikunja_task_relations` | relate, unrelate, relations | |
+| `vikunja_projects` | list, get, create, update, delete, archive/unarchive, tree/children/breadcrumb, move, shares | |
+| `vikunja_kanban` | list-views, list-buckets, create/update/delete-bucket, move-task, bulk-move, set-view-config, apply-template | `viewId` auto-resolves; see filtering notes |
+| `vikunja_labels` | list, get, create, update, delete | |
+| `vikunja_filters` | list, get, create, update, delete, build, validate | see **Filtering** |
+| `vikunja_teams` | list, get, create, update, delete, members | node-vikunja team support is partial |
+| `vikunja_users` | current, search, settings, update-settings | JWT only |
+| `vikunja_templates` | create, list, get, update, delete, instantiate | |
+| `vikunja_webhooks` | list, get, create, update, delete, list-events | |
+| `vikunja_batch_import` | (csv/json) | |
+| `vikunja_export` | | JWT only |
 
-1. **Simplified Storage Architecture (90% Code Reduction)**
-   - Eliminated over-engineered 33-file storage system (9,803 lines)
-   - Replaced with `SimpleFilterStorage.ts` (393 lines) for essential functionality
-   - Thread-safe operations with AsyncMutex
-   - Session-isolated storage with automatic cleanup
-   - Located in `src/storage/SimpleFilterStorage.ts`
+### Where to add code
+- **New tool** → `src/tools/<entity>/` (or `src/tools/<entity>.ts`), then register it in
+  `src/tools/index.ts`, then add `tests/tools/<entity>.test.ts`.
+- **New op on an existing tool** → extend its enum + add a `case` in the handler.
+- **Shared validation / errors** → `src/utils/`.
 
-2. **Zod-Based Filter System (850+ Lines Removed)**
-   - Replaced custom tokenizer/parser/validator with secure Zod schemas
-   - Enhanced security with DoS protection and input validation
-   - Production-ready parsing with comprehensive error handling
-   - Located in `src/utils/filters-zod.ts`
-   - Backward compatible filter syntax with improved reliability
+## Filtering
 
-3. **Production-Ready Retry System (580+ Lines Replaced)**
-   - Replaced custom retry logic with battle-tested opossum library
-   - Circuit breaker with state sharing and automatic recovery
-   - Configurable timeouts, error thresholds, and reset behavior
-   - Enhanced error handling for network failures
-   - Located in `src/utils/retry.ts` with opossum integration
+Two separate mechanisms both wear the word "filter" — keep them distinct:
 
-4. **Hybrid Filtering System**
-   - Intelligent server-side filtering with client-side fallback
-   - Automatic detection of server filtering capabilities
-   - Enhanced memory protection with V8-specific memory estimation
-   - Located in `src/tools/tasks/index.ts` and `src/utils/filters.ts`
+1. **Filter execution (the hybrid engine).** When a task list is filtered, the MCP sends
+   `filter=` to Vikunja **server-first**, then narrows the remainder in memory. The
+   client-side pass exists because Vikunja's server filter has real gaps this fork hit: it
+   can't filter by kanban **bucket id**, and the API caps a page at **50**, so full-set
+   reads and bucket filtering are finished client-side. Lives in
+   `src/tools/tasks/filtering/` and `src/utils/filtering/`. This is legitimate — leave it.
 
-5. **Enhanced Memory Protection System**
-   - V8-specific memory estimation algorithms with 93%+ test coverage
-   - Risk-based analysis (Low/Medium/High) with conservative 2.5x safety margins
-   - Comprehensive task object modeling including nested arrays and dynamic properties
-   - Backward compatible with legacy systems while providing improved accuracy
-   - Located in `src/utils/memory.ts` with integration in `src/tools/tasks/filtering/FilterValidator.ts`
+2. **Saved filters** (`vikunja_filters` create/get/update/delete/list). These persist as
+   **Vikunja server saved filters** (`node-vikunja`'s `FilterService` → the `/filters`
+   endpoint), so they sync to the Vikunja web app and mobile. Vikunja surfaces saved
+   filters as negative-ID pseudo-projects in the projects list; the mapping is
+   `projectID = -filterID - 1`. `build` and `validate` are pure helpers for composing and
+   checking a Vikunja filter-DSL string (no server call).
 
-6. **Conditional Tool Registration**
-   - Tools requiring JWT auth only registered when authenticated with JWT
-   - API token authentication excludes `users` and `export` tools
-   - Authentication type auto-detected by token format
+The Vikunja filter DSL is documented at <https://vikunja.io/docs/filters>.
 
-7. **Session Management**
-   - In-memory session persistence with client caching
-   - Automatic client recreation on credential changes
-   - No persistent storage - sessions reset on server restart
+## Testing
 
-## Testing Philosophy & Requirements
+Coverage is enforced by jest at **65% branches / 65% functions / 75% lines / 75%
+statements** (see `jest.config`). Current actual is roughly **80% lines / 70% branches** —
+above the floor, not comprehensive. The weakest spots are also the most-used tools
+(`kanban.ts`, `task-crud.ts`, task-display enrichment); new work on those should raise
+coverage, not coast on the average.
 
-### Strict Coverage Thresholds (ACHIEVED)
-```json
-"coverageThreshold": {
-  "global": {
-    "branches": 90,    // ✅ Current: 90%+
-    "functions": 98,   // ✅ Current: 98.91% 
-    "lines": 95,       // ✅ Current: 95%+
-    "statements": 95   // ✅ Current: 95%+
-  }
-}
-```
+- `tests/` mirrors `src/`. Tool tests invoke the registered handler directly (they don't
+  round-trip through the MCP transport or Zod), so schema-level normalization/validation is
+  exercised by the SDK at runtime, not by these unit tests — assert behavior in the handler.
+- All `node-vikunja` calls are mocked; there is no live server in unit tests.
+- **If code can't be reached by a test, prefer deleting it over adding defensive branches**
+  you then have to mock into existence.
+- `npm run test:mcp` exercises the server end-to-end against a real Vikunja; see
+  `docs/MCP-TEST-CHECKLIST.md` for manual checks.
 
-**Achievement**: All coverage thresholds have been met and are maintained through comprehensive test suites covering security scenarios, edge cases, and performance benchmarks.
+## Known constraints
 
-### Defensive Programming Rule
-**If code cannot be tested, it must be removed.** Every defensive pattern (like `|| ''` fallbacks) must have corresponding test cases that trigger those code paths.
+- **Vikunja API:** server-side filtering is limited (no bucket-id filter, 50/page cap) —
+  hence the hybrid engine above. Kanban buckets belong to a **view**, not directly to a
+  project, so bucket ops take `projectId` + `viewId`.
+- **node-vikunja:** team operations are incomplete; some user endpoints are JWT-only.
+- **MCP:** no file attachments; tool calls are synchronous; no shared state between calls
+  beyond the in-memory session.
+- **Node 20+**, TypeScript strict mode.
 
-Example pattern:
-```typescript
-// This defensive code MUST be testable
-const message = error.message.toLowerCase() || '';
-// Test MUST mock scenarios where error.message is undefined
-```
+## Git / workflow
 
-### Test Organization
-```
-tests/
-├── tools/           # Mirror src/tools structure exactly
-├── auth/           # Authentication edge cases
-├── utils/          # Utility function coverage  
-└── types/          # Type definition validation
-```
-
-### Mock Strategy
-- **External Dependencies**: All node-vikunja API calls mocked
-- **Edge Cases**: Test malformed API responses, auth failures, network errors
-- **Race Conditions**: Dedicated test files for concurrent operations
-
-### Integration Testing
-
-Run MCP integration tests against real Vikunja:
-```bash
-npm run test:mcp
-```
-
-For manual testing with Claude, see `docs/MCP-TEST-CHECKLIST.md`.
-
-## Key Dependencies & Integration
-
-### Core Dependencies
-- **@modelcontextprotocol/sdk**: MCP server framework and transport layer
-- **node-vikunja**: Vikunja API client (dynamically imported for testability)
-- **zod**: Runtime validation for MCP tool arguments and responses
-- **jest + ts-jest**: Testing with TypeScript support and coverage
-- **opossum**: Battle-tested circuit breaker for production resilience
-- **express-rate-limit**: Configurable DoS protection and rate limiting
-
-### Authentication Strategy
-- **API Token** (`tk_*`): Standard auth, excludes user-specific endpoints
-- **JWT Token** (`eyJ*`): Full access including user management and export
-- **Auto-Detection**: Token format determines authentication type and available tools
-- **Security Layer**: Credential masking in logs, secure session management with `src/auth/AuthManager.ts`
-
-### Security Architecture
-- **Zod Validation**: `src/utils/filters-zod.ts` - Enterprise-grade input validation with DoS protection
-- **Rate Limiting**: `src/middleware/rate-limiting.ts` - Configurable DoS protection
-- **Input Validation**: `src/utils/security.ts` - Sanitization and allowlist validation
-- **Memory Protection**: `src/utils/memory.ts` - Enhanced V8-specific memory estimation with risk analysis and 93%+ test coverage
-- **Thread Safety**: `src/storage/SimpleFilterStorage.ts` - Concurrent access protection with AsyncMutex
-
-### Error Handling Architecture
-- **Centralized Error Utilities**: `src/utils/error-handler.ts` provides standardized error processing
-- **MCPError Types**: Structured errors with codes and messages
-- **Circuit Breaker**: Production-ready retry logic with opossum integration in `src/utils/retry.ts`
-- **Security-Aware Errors**: Credential masking and safe error reporting with `src/utils/security.ts`
-- **Batch Operations**: Transaction-like error handling with partial success reporting
-
-## Development Workflow Requirements
-
-### Git Workflow
-```bash
-git checkout -b feature/implement-new-tool
-# Commit early and often during development
-git commit -m "wip: add basic tool structure"
-git commit -m "feat: implement tool validation"
-git commit -m "test: add comprehensive test coverage"
-
-# Before push: ALL checks must pass
-npm run lint && npm run test:coverage && npm run typecheck
-git push origin feature/implement-new-tool
-```
-
-### Adding New Tools
-1. Create tool module in `src/tools/[entity]/`
-2. Implement with subcommand pattern and Zod validation
-3. Register in `src/tools/index.ts` with conditional logic if needed
-4. Create test file in `tests/tools/[entity]/` with 100% coverage
-5. Update README.md with tool documentation
-
-### Error Handling Pattern
-```typescript
-try {
-  // Vikunja API operation
-} catch (error) {
-  if (error instanceof MCPError) {
-    throw error;  // Re-throw MCP errors
-  }
-  throw new MCPError(ErrorCode.API_ERROR, error.message);
-}
-```
-
-## Known Architectural Constraints
-
-1. **Vikunja API Limitations**: 
-   - Hybrid filtering implemented to handle server-side inconsistencies
-   - Team operations incomplete in node-vikunja library
-   - Some user endpoints have authentication issues
-
-2. **MCP Protocol Constraints**:
-   - No file attachment support
-   - Synchronous tool execution model
-   - Limited context sharing between tool calls
-
-3. **Performance Considerations**:
-   - Hybrid filtering optimizes performance with server-side attempts first
-   - Memory protection prevents unbounded resource consumption
-   - Rate limiting with configurable limits per tool category
-   - Circuit breaker prevents cascading failures and improves resilience
-   - Simplified storage reduces overhead and improves maintainability
-   - Bulk operations make individual API calls (no batch endpoints)
-   - In-memory storage for filters and sessions with thread-safe access
-
-## Version Requirements
-
-- **Node.js**: 20+ LTS only (no EOL versions)
-- **TypeScript**: Strict mode enabled
-- **Vikunja**: Compatible with v0.22.1+ (with known API filter limitation)
-
-## Repository Configuration
-
-- **Owner**: democratize-technology
-- **Branch Strategy**: Feature branches required, no direct main commits
-- **PR Requirements**: Documentation updates, test coverage, passing checks
+This is a personal fork (`@eljojo/...`); releases are tagged directly on `main`. Match the
+existing plain commit-message style (no emoji-prefixed "enterprise-grade" messages). Keep
+changes to one coherent, verified unit per commit, and run lint + typecheck + coverage
+before pushing.
