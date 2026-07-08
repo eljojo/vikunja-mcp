@@ -8,6 +8,7 @@ import { validateId } from '../validation';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
 import { enrichTasksWithBucketIds } from '../../../client/applyTaskServiceCompatibility';
+import type { TaskComment } from '../../../types/vikunja';
 
 export interface GetTaskArgs {
   id?: number;
@@ -64,11 +65,23 @@ export async function getTask(args: GetTaskArgs): Promise<{ content: Array<{ typ
       args.sessionId
     );
 
+    let text = formatAorpAsMarkdown(response.response);
+
+    // Single-task get includes comments: one extra call — cheap for one task, and comments
+    // are the context you want when opening a card. (list does NOT do this — N calls would be
+    // too heavy.) Degrade gracefully; never fail the whole get if the comments fetch fails.
+    try {
+      const comments = await client.tasks.getTaskComments(args.id);
+      text += formatCommentsSection(comments);
+    } catch {
+      text += '\n\n_(comments unavailable)_';
+    }
+
     return {
       content: [
         {
           type: 'text' as const,
-          text: formatAorpAsMarkdown(response.response),
+          text,
         },
       ],
     };
@@ -93,6 +106,19 @@ export async function getTask(args: GetTaskArgs): Promise<{ content: Array<{ typ
     }
     throw transformApiError(error, 'Failed to get task');
   }
+}
+
+function formatCommentsSection(comments: TaskComment[]): string {
+  if (!comments || comments.length === 0) {
+    return '\n\n### Comments (0)\n_No comments._';
+  }
+  const lines = comments.map((c) => {
+    const who = c.author?.name || c.author?.username || 'unknown';
+    const when = (c.created ?? '').slice(0, 16).replace('T', ' ');
+    const body = (c.comment ?? '').replace(/<[^>]+>/g, '').trim();
+    return `- **${who}** · ${when} — ${body}`;
+  });
+  return `\n\n### Comments (${comments.length})\n${lines.join('\n')}`;
 }
 
 function resolveViewId(args: GetTaskArgs): number | undefined {
