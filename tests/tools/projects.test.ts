@@ -690,6 +690,15 @@ describe('Projects Tool', () => {
       );
     });
 
+    it('explains that an invalid-token delete failure is a token-permission issue', async () => {
+      mockClient.projects.getProject.mockResolvedValue(mockProject);
+      mockClient.projects.deleteProject.mockRejectedValue(new Error('invalid token'));
+
+      await expect(callTool('delete', { id: 1 })).rejects.toThrow(
+        /lacks the Delete right on Projects/,
+      );
+    });
+
     it('should handle API errors', async () => {
       mockClient.projects.deleteProject.mockRejectedValue(new Error('API Error'));
 

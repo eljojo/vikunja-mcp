@@ -1818,18 +1818,12 @@ describe('Tasks Tool', () => {
       // Mock bulk update API to return tasks with UNCHANGED values (simulating the bug)
       mockClient.tasks.bulkUpdateTasks.mockResolvedValue([task1, task2]);
 
-      // Mock getTask for fetching current task state (used by fallback)
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce(task1)  // First task for fallback update
-        .mockResolvedValueOnce(task2); // Second task for fallback update
+      // getTask keyed by id (not call order): bulk update runs sequentially with
+      // per-task retry, so call-order chains are unreliable. Returns post-update state.
+      mockClient.tasks.getTask.mockImplementation((id: number) =>
+        Promise.resolve(id === 371 ? { ...task1, priority: 5 } : { ...task2, priority: 5 }));
 
-      // Mock updateTask for the fallback individual updates
       mockClient.tasks.updateTask
-        .mockResolvedValueOnce({ ...task1, priority: 5 })
-        .mockResolvedValueOnce({ ...task2, priority: 5 });
-
-      // Mock final getTask calls to return updated values
-      mockClient.tasks.getTask
         .mockResolvedValueOnce({ ...task1, priority: 5 })
         .mockResolvedValueOnce({ ...task2, priority: 5 });
 
@@ -1860,14 +1854,10 @@ describe('Tasks Tool', () => {
       // Mock bulk update API returns unchanged values
       mockClient.tasks.bulkUpdateTasks.mockResolvedValue([task1, task2]);
 
-      // Mock fallback
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce(task1)
-        .mockResolvedValueOnce(task2);
+      // getTask keyed by id (sequential + retry safe); returns post-update state.
+      mockClient.tasks.getTask.mockImplementation((id: number) =>
+        Promise.resolve(id === 1 ? { ...task1, done: true } : { ...task2, done: true }));
       mockClient.tasks.updateTask
-        .mockResolvedValueOnce({ ...task1, done: true })
-        .mockResolvedValueOnce({ ...task2, done: true });
-      mockClient.tasks.getTask
         .mockResolvedValueOnce({ ...task1, done: true })
         .mockResolvedValueOnce({ ...task2, done: true });
 
@@ -1892,14 +1882,10 @@ describe('Tasks Tool', () => {
       // Mock bulk update API returns unchanged values
       mockClient.tasks.bulkUpdateTasks.mockResolvedValue([task1, task2]);
 
-      // Mock fallback
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce(task1)
-        .mockResolvedValueOnce(task2);
+      // getTask keyed by id (sequential + retry safe); returns post-update state.
+      mockClient.tasks.getTask.mockImplementation((id: number) =>
+        Promise.resolve(id === 1 ? { ...task1, due_date: newDueDate } : { ...task2, due_date: newDueDate }));
       mockClient.tasks.updateTask
-        .mockResolvedValueOnce({ ...task1, due_date: newDueDate })
-        .mockResolvedValueOnce({ ...task2, due_date: newDueDate });
-      mockClient.tasks.getTask
         .mockResolvedValueOnce({ ...task1, due_date: newDueDate })
         .mockResolvedValueOnce({ ...task2, due_date: newDueDate });
 
@@ -1923,14 +1909,10 @@ describe('Tasks Tool', () => {
       // Mock bulk update API returns unchanged values
       mockClient.tasks.bulkUpdateTasks.mockResolvedValue([task1, task2]);
 
-      // Mock fallback
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce(task1)
-        .mockResolvedValueOnce(task2);
+      // getTask keyed by id (sequential + retry safe); returns post-update state.
+      mockClient.tasks.getTask.mockImplementation((id: number) =>
+        Promise.resolve(id === 1 ? { ...task1, project_id: 5 } : { ...task2, project_id: 5 }));
       mockClient.tasks.updateTask
-        .mockResolvedValueOnce({ ...task1, project_id: 5 })
-        .mockResolvedValueOnce({ ...task2, project_id: 5 });
-      mockClient.tasks.getTask
         .mockResolvedValueOnce({ ...task1, project_id: 5 })
         .mockResolvedValueOnce({ ...task2, project_id: 5 });
 
@@ -2087,19 +2069,14 @@ describe('Tasks Tool', () => {
       // Mock bulk update API to fail so we use fallback
       mockClient.tasks.bulkUpdateTasks.mockRejectedValue(new Error('Bulk API failed'));
 
-      // Mock individual updates to succeed
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce({ ...mockTask, id: 1 })
-        .mockResolvedValueOnce({ ...mockTask, id: 2 })
-        .mockResolvedValueOnce({ ...mockTask, id: 3 });
-
       mockClient.tasks.updateTask.mockResolvedValue({ ...mockTask, done: true });
 
-      // Mock post-update fetches - one fails
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce({ ...mockTask, id: 1, done: true })
-        .mockRejectedValueOnce(new Error('Task not found'))
-        .mockResolvedValueOnce({ ...mockTask, id: 3, done: true });
+      // Task 2 fails permanently (every attempt); tasks 1 and 3 succeed. Keyed by
+      // id so the failure survives per-task retries instead of leaking to a sibling.
+      mockClient.tasks.getTask.mockImplementation((id: number) =>
+        id === 2
+          ? Promise.reject(new Error('Task not found'))
+          : Promise.resolve({ ...mockTask, id, done: true }));
 
       const result = await callTool('bulk-update', {
         taskIds: [1, 2, 3],
@@ -2117,11 +2094,14 @@ describe('Tasks Tool', () => {
     });
 
     it('should handle bulk update for assignees field', async () => {
-      // Current fetch reports no assignees; the post-update verify fetch reports the new set
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce({ ...mockTask, id: 1, assignees: [] })
-        .mockResolvedValueOnce({ ...mockTask, id: 2, assignees: [] })
-        .mockResolvedValue({ ...mockTask, assignees: [{ id: 1 }, { id: 2 }] });
+      // First fetch per id reports no assignees (so the add fires); later fetches
+      // (post-update verify) report the new set. Keyed by id, not call order.
+      const assigneesSeen = new Set<number>();
+      mockClient.tasks.getTask.mockImplementation((id: number) => {
+        const post = assigneesSeen.has(id);
+        assigneesSeen.add(id);
+        return Promise.resolve({ ...mockTask, id, assignees: post ? [{ id: 1 }, { id: 2 }] : [] });
+      });
 
       const result = await callTool('bulk-update', {
         taskIds: [1, 2],
@@ -2256,13 +2236,12 @@ describe('Tasks Tool', () => {
         assignees: [{ id: 1, username: 'user1' }],
       };
       
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce(taskWithAssignees) // For fetch at start
-        .mockResolvedValueOnce(taskWithAssignees) // For assignee diff calculation
-        .mockResolvedValueOnce({ ...taskWithAssignees, assignees: [] }); // For final fetch
-      
+      // Current state always shows the assignee to remove, so every attempt tries
+      // (and fails) the removal — keyed on state, not call order.
+      mockClient.tasks.getTask.mockResolvedValue(taskWithAssignees);
+
       mockClient.tasks.updateTask.mockResolvedValue(taskWithAssignees);
-      
+
       // Mock removeUserFromTask to fail
       mockClient.tasks.removeUserFromTask.mockRejectedValue(new Error('Failed to remove user'));
 
@@ -2279,20 +2258,14 @@ describe('Tasks Tool', () => {
       // Mock bulk API to fail (which triggers fallback)
       mockClient.tasks.bulkUpdateTasks.mockRejectedValue(new Error('Bulk API not supported'));
       
-      // Mock initial task fetches
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce({ ...mockTask, id: 1 }) // initial fetch for task 1
-        .mockResolvedValueOnce({ ...mockTask, id: 2 }); // initial fetch for task 2
-      
-      // Mock update to succeed for both tasks
-      mockClient.tasks.updateTask
-        .mockResolvedValueOnce({ ...mockTask, id: 1, priority: 5 })
-        .mockResolvedValueOnce({ ...mockTask, id: 2, priority: 5 });
-      
-      // Mock the final fetch - succeed for task 1, fail for task 2
-      mockClient.tasks.getTask
-        .mockResolvedValueOnce({ ...mockTask, id: 1, priority: 5 })
-        .mockRejectedValueOnce(new Error('Task not found'));
+      mockClient.tasks.updateTask.mockResolvedValue({ ...mockTask, priority: 5 });
+
+      // Task 2 fails permanently; task 1 succeeds. Keyed by id so the failure
+      // survives per-task retries instead of leaking to task 1.
+      mockClient.tasks.getTask.mockImplementation((id: number) =>
+        id === 2
+          ? Promise.reject(new Error('Task not found'))
+          : Promise.resolve({ ...mockTask, id, priority: 5 }));
 
       const result = await callTool('bulk-update', {
         taskIds: [1, 2],

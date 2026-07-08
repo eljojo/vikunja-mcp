@@ -70,11 +70,14 @@ export function registerProjectsTool(
         'get-children', 'get-tree', 'get-breadcrumb', 'move',
         'create-share', 'list-shares', 'get-share', 'delete-share', 'auth-share'
       ]),
-      // CRUD arguments
-      id: z.number().positive().optional(),
+      // CRUD arguments. Identifier fields use z.coerce so a client that sends a
+      // numeric id as a string (some MCP clients do) is accepted instead of
+      // rejected with "expected number, received string". null still passes
+      // through nullable() without coercion.
+      id: z.coerce.number().positive().optional(),
       title: z.string().optional(),
       description: z.string().optional(),
-      parentProjectId: z.number().positive().nullable().optional(),
+      parentProjectId: z.coerce.number().positive().nullable().optional(),
       isArchived: z.boolean().optional(),
       hexColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
       page: z.number().min(1).optional(),
@@ -84,7 +87,7 @@ export function registerProjectsTool(
       maxDepth: z.number().min(1).max(20).optional(),
       includeArchived: z.boolean().optional(),
       // Sharing arguments
-      projectId: z.number().positive().optional(),
+      projectId: z.coerce.number().positive().optional(),
       shareId: z.string().optional(),
       shareHash: z.string().optional(),
       right: z.enum(['read', 'write', 'admin']).optional(),

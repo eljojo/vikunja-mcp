@@ -19,10 +19,32 @@ import { moveTaskToBucket } from '../../client/applyTaskServiceCompatibility';
 // ==================== BATCH PROCESSORS ====================
 
 const processors = {
-  update: new BatchProcessor({ maxConcurrency: 5, batchSize: 10, enableMetrics: true, batchDelay: 0 }),
+  // Updates run sequentially (maxConcurrency 1): concurrent read-modify-write
+  // against Vikunja was silently dropping ~40% of tasks under load. Combined
+  // with the per-item retry below, this is the same safety treatment the kanban
+  // moves got — do one at a time, retry transient failures, verify each.
+  update: new BatchProcessor({ maxConcurrency: 1, batchSize: 10, enableMetrics: true, batchDelay: 0 }),
   delete: new BatchProcessor({ maxConcurrency: 3, batchSize: 5, enableMetrics: true, batchDelay: 100 }),
   create: new BatchProcessor({ maxConcurrency: 8, batchSize: 15, enableMetrics: true, batchDelay: 0 }),
 };
+
+/** Retry attempts per task in a bulk update (initial try + retries). */
+const BULK_UPDATE_ITEM_ATTEMPTS = 3;
+
+/**
+ * A per-task failure is worth retrying unless it's a definite dead-end:
+ * auth failures won't fix themselves on retry, and validation errors mean the
+ * request itself is wrong. Everything else (transient API/verify hiccups under
+ * load — the actual cause of the ~40% drop) gets another attempt.
+ */
+function isBulkUpdateRetryable(error: unknown): boolean {
+  if (isAuthenticationError(error)) return false;
+  if (error instanceof MCPError) {
+    if (error.code === ErrorCode.VALIDATION_ERROR) return false;
+    if (/authentication/i.test(error.message)) return false;
+  }
+  return true;
+}
 
 // ==================== VALIDATION WRAPPERS ====================
 
@@ -57,7 +79,7 @@ export async function bulkUpdateTasks(args: BulkUpdateArgs): Promise<{ content: 
     const taskIds = args.taskIds ?? [];
     const client = await getClientFromContext();
 
-    const updateResult = await processors.update.processBatches(taskIds, async (taskId) => {
+    const updateOne = async (taskId: number): Promise<Task> => {
       const current = await client.tasks.getTask(taskId);
 
       if (args.field === 'assignees' && Array.isArray(args.value)) {
@@ -137,6 +159,21 @@ export async function bulkUpdateTasks(args: BulkUpdateArgs): Promise<{ content: 
       const updated = await client.tasks.getTask(taskId);
       verifyBulkUpdate(updated, args.field, args.value);
       return updated;
+    };
+
+    // Sequential (maxConcurrency 1) with a retry per task, so a transient failure
+    // under load is retried instead of silently landing in "failed".
+    const updateResult = await processors.update.processBatches(taskIds, async (taskId) => {
+      let lastError: unknown;
+      for (let attempt = 0; attempt < BULK_UPDATE_ITEM_ATTEMPTS; attempt++) {
+        try {
+          return await updateOne(taskId);
+        } catch (error) {
+          lastError = error;
+          if (!isBulkUpdateRetryable(error)) throw error;
+        }
+      }
+      throw lastError;
     });
 
     if (updateResult.successful.length === 0) {

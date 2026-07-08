@@ -522,6 +522,20 @@ export async function deleteProject(
     if (error instanceof MCPError) {
       throw error;
     }
+    // A Vikunja API token carries per-right scopes. Deleting needs the Delete
+    // right on Projects; archiving only needs Update — so an "invalid token" here
+    // while archive works is a token-permission issue, NOT a code bug. Say so
+    // explicitly so it isn't mistaken for a defect.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/invalid token|missing, malformed, expired|forbidden|permission/i.test(message)) {
+      throw new MCPError(
+        ErrorCode.PERMISSION_DENIED,
+        `Cannot delete project ${id}: the Vikunja API token lacks the Delete right on Projects. ` +
+          `This is expected token-scope behaviour, not an MCP bug — archiving still works because it ` +
+          `only needs the Update right. To enable deletes, regenerate the API token with the Projects ` +
+          `"Delete" permission. Original error: ${message}`,
+      );
+    }
     throw handleStatusCodeError(
       error,
       'Failed to delete project',

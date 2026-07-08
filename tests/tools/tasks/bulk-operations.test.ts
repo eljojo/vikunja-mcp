@@ -388,6 +388,34 @@ describe('Bulk operations', () => {
       });
     });
 
+    describe('Retry on transient failure', () => {
+      it('retries a task whose first update fails, then reports success', async () => {
+        mockClient.tasks.getTask.mockResolvedValue({ id: 1, project_id: 1, title: 'T', done: true });
+        // First write fails as if under concurrent load; the retry succeeds.
+        mockClient.tasks.updateTask
+          .mockRejectedValueOnce(new Error('database is locked'))
+          .mockResolvedValue({ id: 1, project_id: 1, title: 'T', done: true });
+
+        const result = await bulkUpdateTasks({ taskIds: [1], field: 'done', value: true });
+
+        expect(result.content[0].text).toContain('Successfully updated 1 tasks');
+        expect(mockClient.tasks.updateTask).toHaveBeenCalledTimes(2);
+      });
+
+      it('does not retry a validation error', async () => {
+        mockClient.tasks.getTask.mockResolvedValue({ id: 1, project_id: 1, title: 'T', done: false });
+        mockClient.tasks.updateTask.mockRejectedValue(
+          new MCPError(ErrorCode.VALIDATION_ERROR, 'bad value'),
+        );
+
+        await expect(
+          bulkUpdateTasks({ taskIds: [1], field: 'done', value: true }),
+        ).rejects.toThrow('Bulk update failed. Could not update any tasks');
+        // Validation errors are a dead end — tried exactly once, no retry.
+        expect(mockClient.tasks.updateTask).toHaveBeenCalledTimes(1);
+      });
+    });
+
     describe('Error handling', () => {
       it('should preserve MCPError instances', async () => {
         const mcpError = new MCPError(ErrorCode.NOT_FOUND, 'Task not found');
