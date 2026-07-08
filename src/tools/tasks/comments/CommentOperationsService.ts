@@ -22,6 +22,18 @@ export const CommentOperationsService = {
   },
 
   /**
+   * Update an existing comment on a task
+   */
+  async updateComment(taskId: number, commentId: number, commentText: string): Promise<TaskComment> {
+    const client = await getClientFromContext();
+    return await client.tasks.updateTaskComment(taskId, commentId, {
+      id: commentId,
+      task_id: taskId,
+      comment: commentText,
+    });
+  },
+
+  /**
    * Fetch all comments for a task
    */
   async fetchTaskComments(taskId: number): Promise<TaskComment[]> {

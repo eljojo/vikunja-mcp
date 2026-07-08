@@ -13,7 +13,7 @@ import { commentResponseFormatter } from './CommentResponseFormatter';
  */
 export async function handleComment(args: {
   id?: number;
-  comment?: string;
+  comment?: string | undefined;
 }): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
     const { taskId, commentText } = commentValidationService.validateCommentInput(args);
@@ -41,6 +41,29 @@ export async function handleComment(args: {
     throw new MCPError(
       ErrorCode.API_ERROR,
       `Failed to handle comment: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/**
+ * Update an existing comment on a task
+ */
+export async function handleUpdateComment(args: {
+  id?: number;
+  commentId?: number | undefined;
+  comment?: string | undefined;
+}): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  try {
+    const { taskId, commentId, commentText } = commentValidationService.validateUpdateInput(args);
+
+    const updated = await CommentOperationsService.updateComment(taskId, commentId, commentText);
+
+    const response = commentResponseFormatter.formatUpdateCommentResponse(updated);
+    return commentResponseFormatter.formatMcpResponse(response);
+  } catch (error) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Failed to update comment: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }

@@ -12,7 +12,7 @@ import { MCPError, ErrorCode } from '../types';
 import { getClientFromContext, setGlobalClientFactory } from '../client';
 import { logger } from '../utils/logger';
 import { createAuthRequiredError } from '../utils/error-handler';
-import { handleComment } from '../tools/tasks/comments/index';
+import { handleComment, listComments, handleUpdateComment } from '../tools/tasks/comments/index';
 
 /**
  * Register task comments tool
@@ -24,12 +24,12 @@ export function registerTaskCommentsTool(
 ): void {
   server.tool(
     'vikunja_task_comments',
-    'Manage task comments: add comments to tasks',
+    'Manage task comments: list a task\'s comments (operation "list"), add one (operation "comment"), or edit one (operation "update", needs commentId)',
     {
-      operation: z.enum(['comment']),
+      operation: z.enum(['comment', 'list', 'update']),
       // Task and comment identification
       id: z.number(),
-      comment: z.string(),
+      comment: z.string().optional(),
       commentId: z.number().optional(),
     },
     async (args) => {
@@ -52,6 +52,12 @@ export function registerTaskCommentsTool(
         switch (args.operation) {
           case 'comment':
             return handleComment(args);
+
+          case 'list':
+            return listComments(args);
+
+          case 'update':
+            return handleUpdateComment(args);
 
           default:
             throw new MCPError(

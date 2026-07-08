@@ -8,7 +8,8 @@ import { validateId } from '../validation';
 
 export interface CommentOperationInput {
   id?: number;
-  comment?: string;
+  comment?: string | undefined;
+  commentId?: number | undefined;
 }
 
 /**
@@ -50,6 +51,31 @@ export const commentValidationService = {
 
     return {
       taskId: args.id,
+    };
+  },
+
+  /**
+   * Validate input specifically for updating a comment
+   */
+  validateUpdateInput(args: CommentOperationInput): { taskId: number; commentId: number; commentText: string } {
+    if (!args.id) {
+      throw new MCPError(ErrorCode.VALIDATION_ERROR, 'Task id is required for update-comment operation');
+    }
+    validateId(args.id, 'id');
+
+    if (!args.commentId) {
+      throw new MCPError(ErrorCode.VALIDATION_ERROR, 'commentId is required for update-comment operation');
+    }
+    validateId(args.commentId, 'commentId');
+
+    if (args.comment === undefined || args.comment.trim() === '') {
+      throw new MCPError(ErrorCode.VALIDATION_ERROR, 'comment text is required for update-comment operation');
+    }
+
+    return {
+      taskId: args.id,
+      commentId: args.commentId,
+      commentText: args.comment,
     };
   },
 
