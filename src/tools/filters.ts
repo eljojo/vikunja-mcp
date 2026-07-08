@@ -2,14 +2,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { AuthManager } from '../auth/AuthManager';
 import type { VikunjaClientFactory } from '../client/VikunjaClientFactory';
-import { storageManager } from '../storage';
+import type { SavedFilter as VikunjaSavedFilter } from 'node-vikunja';
+import { getClientFromContext } from '../client';
+import { filterIdFromProjectId } from '../utils/saved-filters';
 import {
   FilterBuilder,
   validateFilterExpression,
   parseFilterString,
   type FilterField,
   type FilterOperator,
-  type SavedFilter,
 } from '../filters';
 import { logger } from '../utils/logger';
 import { createStandardResponse } from '../types';
@@ -22,15 +23,14 @@ import { createAorpErrorResponse } from '../utils/response-factory';
  * Schema for listing filters
  */
 const ListFiltersSchema = z.object({
-  projectId: z.number().optional().describe('Filter by project ID'),
-  global: z.boolean().optional().describe('Show only global filters'),
+  favorite: z.boolean().optional().describe('Show only favorite filters'),
 });
 
 /**
  * Schema for getting a filter
  */
 const GetFilterSchema = z.object({
-  id: z.string().describe('Filter ID'),
+  id: z.union([z.string(), z.number()]).describe('Saved filter ID'),
 });
 
 /**
@@ -40,16 +40,15 @@ const CreateFilterSchema = z.object({
   name: z.string().optional().describe('Filter name'),
   title: z.string().optional().describe('Filter title (alias for name)'),
   description: z.string().optional().describe('Filter description'),
-  filter: z.string().optional().describe('Filter query string'),
+  filter: z.string().optional().describe('Filter query string (Vikunja filter DSL)'),
   filters: z.object({
     filter_by: z.array(z.string()).optional(),
     filter_value: z.array(z.string()).optional(),
     filter_comparator: z.array(z.string()).optional(),
     filter_concat: z.string().optional(),
-  }).optional().describe('Filter conditions object'),
-  projectId: z.number().optional().describe('Project ID (for project-specific filters)'),
-  isGlobal: z.boolean().default(false).describe('Whether the filter is globally accessible'),
-  is_favorite: z.boolean().optional().describe('Whether the filter is marked as favorite'),
+  }).optional().describe('Filter conditions object (alternative to a filter string)'),
+  isFavorite: z.boolean().optional().describe('Show the filter in the Favorites pseudo-project'),
+  is_favorite: z.boolean().optional().describe('Alias for isFavorite'),
 }).refine(data => (data.name || data.title) && (data.filter || data.filters), {
   message: 'Either name or title must be provided, and either filter or filters must be provided'
 });
@@ -58,19 +57,20 @@ const CreateFilterSchema = z.object({
  * Schema for updating a filter
  */
 const UpdateFilterSchema = z.object({
-  id: z.string().describe('Filter ID'),
+  id: z.union([z.string(), z.number()]).describe('Saved filter ID'),
   name: z.string().optional().describe('New filter name'),
+  title: z.string().optional().describe('New filter title (alias for name)'),
   description: z.string().optional().describe('New filter description'),
   filter: z.string().optional().describe('New filter query string'),
-  projectId: z.number().optional().describe('New project ID'),
-  isGlobal: z.boolean().optional().describe('Whether the filter is globally accessible'),
+  isFavorite: z.boolean().optional().describe('Show the filter in the Favorites pseudo-project'),
+  is_favorite: z.boolean().optional().describe('Alias for isFavorite'),
 });
 
 /**
  * Schema for deleting a filter
  */
 const DeleteFilterSchema = z.object({
-  id: z.string().describe('Filter ID'),
+  id: z.union([z.string(), z.number()]).describe('Saved filter ID'),
 });
 
 /**
@@ -113,21 +113,102 @@ const ValidateFilterSchema = z.object({
 });
 
 /**
- * Get session-scoped storage instance
+ * Shape returned to the caller for a saved filter. `filter` is the Vikunja filter-DSL
+ * string the saved filter wraps (nested under `filters.filter` on the wire).
  */
-async function getSessionStorage(authManager: AuthManager): ReturnType<typeof storageManager.getStorage> {
-  const session = authManager.getSession();
-  const sessionId = session.apiToken ? `${session.apiUrl}:${session.apiToken.substring(0, 8)}` : 'anonymous';
-  return storageManager.getStorage(sessionId, session.userId, session.apiUrl);
+function filterView(filter: VikunjaSavedFilter): Record<string, unknown> {
+  return {
+    id: filter.id,
+    title: filter.title,
+    description: filter.description,
+    filter: (filter.filters as { filter?: string } | undefined)?.filter,
+    is_favorite: filter.is_favorite,
+    created: filter.created,
+    updated: filter.updated,
+  };
+}
+
+/** Build the Vikunja SavedFilter payload from a query string + metadata. */
+function toSavedFilterPayload(fields: {
+  title: string;
+  filter: string;
+  description?: string | undefined;
+  isFavorite?: boolean | undefined;
+}): VikunjaSavedFilter {
+  return {
+    title: fields.title,
+    filters: { filter: fields.filter, filter_include_nulls: false },
+    ...(fields.description !== undefined && { description: fields.description }),
+    ...(fields.isFavorite !== undefined && { is_favorite: fields.isFavorite }),
+  } as VikunjaSavedFilter;
+}
+
+/** Compose a Vikunja filter-DSL string from the structured `filters` builder object. */
+function buildFilterStringFromConditions(filters: {
+  filter_by?: string[] | undefined;
+  filter_value?: string[] | undefined;
+  filter_comparator?: string[] | undefined;
+  filter_concat?: string | undefined;
+}): string {
+  const builder = new FilterBuilder();
+  const { filter_by, filter_value, filter_comparator, filter_concat } = filters;
+
+  if (filter_by && filter_value && filter_comparator) {
+    const conditions: Array<{ field: FilterField; operator: FilterOperator; value: FilterValue }> = [];
+
+    for (let i = 0; i < filter_by.length; i++) {
+      const field = filter_by[i];
+      const value = filter_value?.[i];
+      const comparator = filter_comparator?.[i];
+
+      if (!value || !field || !comparator) continue;
+
+      const validField = field as FilterField;
+      const validComparator = comparator as FilterOperator;
+
+      let typedValue: string | number | boolean = value;
+      if (validField === 'priority' || validField === 'percentDone') {
+        typedValue = Number(value);
+      } else if (validField === 'done') {
+        typedValue = value === 'true';
+      }
+
+      conditions.push({ field: validField, operator: validComparator, value: typedValue });
+    }
+
+    if (conditions.length > 0) {
+      const firstCondition = conditions[0];
+      if (firstCondition) {
+        builder.where(firstCondition.field, firstCondition.operator, firstCondition.value);
+      }
+      for (let i = 1; i < conditions.length; i++) {
+        const condition = conditions[i];
+        if (condition) {
+          if (filter_concat === '||') {
+            builder.or();
+          } else {
+            builder.and();
+          }
+          builder.where(condition.field, condition.operator, condition.value);
+        }
+      }
+    }
+  }
+
+  return builder.toString();
 }
 
 /**
- * Register filters tool
+ * Register filters tool.
+ *
+ * `list`/`get`/`create`/`update`/`delete` operate on real Vikunja saved filters (the
+ * `/filters` endpoint), so filters created here sync to the Vikunja web app and mobile.
+ * `build`/`validate` are pure helpers for composing and checking a filter-DSL string.
  */
-export function registerFiltersTool(server: McpServer, authManager: AuthManager, _clientFactory?: VikunjaClientFactory): void {
+export function registerFiltersTool(server: McpServer, _authManager: AuthManager, _clientFactory?: VikunjaClientFactory): void {
   server.tool(
     'vikunja_filters',
-    'Manage and build advanced filters for tasks and projects with validation',
+    'Manage Vikunja saved filters (synced to web + mobile) and build/validate filter query strings',
     {
       action: z.enum(['list', 'get', 'create', 'update', 'delete', 'build', 'validate']),
       parameters: z.record(z.unknown()),
@@ -136,287 +217,155 @@ export function registerFiltersTool(server: McpServer, authManager: AuthManager,
       logger.info(`Executing vikunja_filters action: ${action}`);
 
       try {
-        const storage = await getSessionStorage(authManager);
         switch (action) {
           case 'list': {
             const params = ListFiltersSchema.parse(parameters);
-            logger.debug(`Listing filters with params:`, params);
+            const client = await getClientFromContext();
 
-            let filters = await storage.list();
+            // Saved filters surface as negative-id pseudo-projects in the projects list.
+            const projects = await client.projects.getProjects();
+            const filterProjects = (projects || []).filter(
+              (p) => typeof p.id === 'number' && p.id < 0,
+            );
 
-            if (params.projectId !== undefined) {
-              filters = await storage.getByProject(params.projectId);
-            } else if (params.global !== undefined) {
-              filters = filters.filter((f) => f.isGlobal === params.global);
+            let filters = filterProjects.map((p) => ({
+              id: filterIdFromProjectId(p.id as number),
+              title: p.title,
+              description: p.description,
+              is_favorite: p.is_favorite,
+            }));
+
+            if (params.favorite !== undefined) {
+              filters = filters.filter((f) => Boolean(f.is_favorite) === params.favorite);
             }
 
             const response = createStandardResponse(
               'list-saved-filters',
               `Found ${filters.length} saved filter${filters.length !== 1 ? 's' : ''}`,
-              {
-                filters: filters.map((f) => ({
-                  id: f.id,
-                  name: f.name,
-                  description: f.description,
-                  filter: f.filter,
-                  projectId: f.projectId,
-                  isGlobal: f.isGlobal,
-                  created: f.created.toISOString(),
-                  updated: f.updated.toISOString(),
-                })),
-              },
+              { filters },
               { count: filters.length },
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           case 'get': {
             const params = GetFilterSchema.parse(parameters);
-            logger.debug(`Getting filter with id: ${params.id}`);
+            const client = await getClientFromContext();
 
-            const filter = await storage.get(params.id);
-            if (!filter) {
-              throw new MCPError(ErrorCode.NOT_FOUND, `Filter with id ${params.id} not found`);
-            }
+            const filter = await client.filters.getFilter(Number(params.id));
 
             const response = createStandardResponse(
               'get-saved-filter',
-              `Retrieved filter "${filter.name}"`,
-              {
-                filter: {
-                  id: filter.id,
-                  name: filter.name,
-                  description: filter.description,
-                  filter: filter.filter,
-                  projectId: filter.projectId,
-                  isGlobal: filter.isGlobal,
-                  created: filter.created.toISOString(),
-                  updated: filter.updated.toISOString(),
-                },
-              },
+              `Retrieved filter "${filter.title}"`,
+              { filter: filterView(filter) },
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           case 'create': {
             const params = CreateFilterSchema.parse(parameters);
-            
-            // Use title as name if name is not provided
-            // Schema validation ensures at least one of name/title is provided
-            const name = params.name ?? params.title;
-            logger.debug(`Creating filter with name: ${name}`);
+            const client = await getClientFromContext();
+
+            // Schema guarantees name or title is present.
+            const title = (params.name ?? params.title) as string;
 
             let filterString = params.filter;
             if (!filterString && params.filters) {
-              const builder = new FilterBuilder();
-              const { filter_by, filter_value, filter_comparator, filter_concat } = params.filters;
-              
-              if (filter_by && filter_value && filter_comparator) {
-                // Collect all conditions first, then build the filter
-                const conditions: Array<{field: FilterField, operator: FilterOperator, value: FilterValue}> = [];
-
-                for (let i = 0; i < filter_by.length; i++) {
-                  const field = filter_by[i];
-                  const value = filter_value?.[i];
-                  const comparator = filter_comparator?.[i];
-
-                  if (!value || !field || !comparator) continue;
-
-                  // Validate field and operator are valid enums
-                  const validField = field as FilterField;
-                  const validComparator = comparator as FilterOperator;
-
-                  let typedValue: string | number | boolean = value;
-                  if (validField === 'priority' || validField === 'percentDone') {
-                    typedValue = Number(value);
-                  } else if (validField === 'done') {
-                    typedValue = value === 'true';
-                  }
-
-                  conditions.push({ field: validField, operator: validComparator, value: typedValue });
-                }
-
-                // Build filter with all conditions
-                if (conditions.length > 0) {
-                  const firstCondition = conditions[0];
-                  if (firstCondition) {
-                    builder.where(firstCondition.field, firstCondition.operator, firstCondition.value);
-                  }
-
-                  for (let i = 1; i < conditions.length; i++) {
-                    const condition = conditions[i];
-                    if (condition) {
-                      if (filter_concat === '||') {
-                        builder.or();
-                      } else {
-                        builder.and();
-                      }
-                      builder.where(condition.field, condition.operator, condition.value);
-                    }
-                  }
-                }
-              }
-              
-              filterString = builder.toString();
+              filterString = buildFilterStringFromConditions(params.filters);
             }
-
             if (!filterString) {
               throw createValidationError('No filter conditions provided');
             }
 
-            const existing = await storage.findByName(name || '');
-            if (existing) {
-              throw createValidationError(`Filter with name "${name}" already exists`);
-            }
-
-            const filter = await storage.create({
-              name: name || '',
+            const payload = toSavedFilterPayload({
+              title,
               filter: filterString,
-              isGlobal: params.isGlobal || params.is_favorite || false,
-              ...(params.description && { description: params.description }),
-              ...(params.projectId !== undefined && { projectId: params.projectId }),
+              ...(params.description !== undefined && { description: params.description }),
+              ...((params.isFavorite ?? params.is_favorite) !== undefined && {
+                isFavorite: params.isFavorite ?? params.is_favorite,
+              }),
             });
+
+            const filter = await client.filters.createFilter(payload);
 
             const response = createStandardResponse(
               'create-saved-filter',
-              `Filter "${filter.name}" saved successfully`,
-              {
-                filter: {
-                  id: filter.id,
-                  name: filter.name,
-                  description: filter.description,
-                  filter: filter.filter,
-                  projectId: filter.projectId,
-                  isGlobal: filter.isGlobal,
-                  created: filter.created.toISOString(),
-                  updated: filter.updated.toISOString(),
-                },
-              },
+              `Filter "${filter.title}" saved to Vikunja`,
+              { filter: filterView(filter) },
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           case 'update': {
             const params = UpdateFilterSchema.parse(parameters);
-            logger.debug(`Updating filter with id: ${params.id}`);
+            const client = await getClientFromContext();
 
-            const { id, ...updates } = params;
+            // Vikunja's update replaces the whole saved filter, so fetch and merge.
+            const existing = await client.filters.getFilter(Number(params.id));
 
-            // If renaming, check for duplicate names
-            if (updates.name) {
-              const existing = await storage.findByName(updates.name);
-              if (existing && existing.id !== id) {
-                throw createValidationError(`Filter with name "${updates.name}" already exists`);
-              }
-            }
+            const title = params.name ?? params.title;
+            const isFavorite = params.isFavorite ?? params.is_favorite;
+            const currentQuery = (existing.filters as { filter?: string } | undefined)?.filter ?? '';
 
-            const updateData: Partial<Omit<SavedFilter, 'id' | 'created' | 'updated'>> = {};
-            if (updates.name !== undefined) updateData.name = updates.name;
-            if (updates.description !== undefined) updateData.description = updates.description;
-            if (updates.filter !== undefined) updateData.filter = updates.filter;
-            if (updates.projectId !== undefined) updateData.projectId = updates.projectId;
-            if (updates.isGlobal !== undefined) updateData.isGlobal = updates.isGlobal;
+            const merged = {
+              ...existing,
+              ...(title !== undefined && { title }),
+              ...(params.description !== undefined && { description: params.description }),
+              ...(isFavorite !== undefined && { is_favorite: isFavorite }),
+              filters: {
+                ...(existing.filters as Record<string, unknown>),
+                filter: params.filter !== undefined ? params.filter : currentQuery,
+              },
+            } as VikunjaSavedFilter;
 
-            const filter = await storage.update(id, updateData);
+            const filter = await client.filters.updateFilter(Number(params.id), merged);
 
-            const affectedFields = Object.keys(updateData).filter(
-              (key) => updateData[key as keyof typeof updateData] !== undefined,
-            );
+            const affectedFields = [
+              title !== undefined && 'title',
+              params.description !== undefined && 'description',
+              params.filter !== undefined && 'filter',
+              isFavorite !== undefined && 'is_favorite',
+            ].filter(Boolean) as string[];
 
             const response = createStandardResponse(
               'update-saved-filter',
-              `Filter "${filter.name}" updated successfully`,
-              {
-                filter: {
-                  id: filter.id,
-                  name: filter.name,
-                  description: filter.description,
-                  filter: filter.filter,
-                  projectId: filter.projectId,
-                  isGlobal: filter.isGlobal,
-                  created: filter.created.toISOString(),
-                  updated: filter.updated.toISOString(),
-                },
-              },
+              `Filter "${filter.title}" updated`,
+              { filter: filterView(filter) },
               { affectedFields },
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           case 'delete': {
             const params = DeleteFilterSchema.parse(parameters);
-            logger.debug(`Deleting filter with id: ${params.id}`);
+            const client = await getClientFromContext();
 
-            const filter = await storage.get(params.id);
-            if (!filter) {
-              throw new MCPError(ErrorCode.NOT_FOUND, `Filter with id ${params.id} not found`);
-            }
-
-            await storage.delete(params.id);
+            // Fetch first so the confirmation names the filter and a missing id 404s clearly.
+            const filter = await client.filters.getFilter(Number(params.id));
+            await client.filters.deleteFilter(Number(params.id));
 
             const response = createStandardResponse(
               'delete-saved-filter',
-              `Filter "${filter.name}" deleted successfully`,
+              `Filter "${filter.title}" deleted`,
               { success: true },
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           case 'build': {
             const params = BuildFilterSchema.parse(parameters);
-            logger.debug(`Building filter from conditions`);
 
             const builder = new FilterBuilder();
-
             params.conditions.forEach((condition, index) => {
               if (index > 0 && params.groupOperator === '||') {
                 builder.or();
               }
-              builder.where(
-                condition.field,
-                condition.operator,
-                condition.value,
-              );
+              builder.where(condition.field, condition.operator, condition.value);
             });
 
             const filterString = builder.toString();
@@ -424,55 +373,36 @@ export function registerFiltersTool(server: McpServer, authManager: AuthManager,
             const response = createStandardResponse(
               'build-filter',
               'Filter built successfully',
-              {
-                filter: filterString,
-                valid: true,
-                warnings: [],
-              },
+              { filter: filterString, valid: true, warnings: [] },
               { conditionCount: params.conditions.length },
             );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           case 'validate': {
             const params = ValidateFilterSchema.parse(parameters);
-            logger.debug(`Validating filter: ${params.filter}`);
 
-            // Parse the filter string using our secure parser
             const parseResult = parseFilterString(params.filter);
-
             if (!parseResult.expression) {
               const errorMsg = parseResult.error?.message || 'Invalid filter syntax';
               throw createValidationError(`Invalid filter: ${errorMsg}`);
             }
 
-            // Validate the parsed expression
             const validationResult = validateFilterExpression(parseResult.expression);
 
-            const response = createStandardResponse('validate-filter',
-              validationResult.valid ? 'Filter is valid' : 'Filter validation failed', {
-              valid: validationResult.valid,
-              warnings: validationResult.warnings || [],
-              errors: validationResult.errors || [],
-              filter: params.filter,
-            });
+            const response = createStandardResponse(
+              'validate-filter',
+              validationResult.valid ? 'Filter is valid' : 'Filter validation failed',
+              {
+                valid: validationResult.valid,
+                warnings: validationResult.warnings || [],
+                errors: validationResult.errors || [],
+                filter: params.filter,
+              },
+            );
 
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: formatAorpAsMarkdown(response), // createStandardResponse returns AORP object, format as markdown
-                },
-              ],
-            };
+            return { content: [{ type: 'text' as const, text: formatAorpAsMarkdown(response) }] };
           }
 
           default:
@@ -481,41 +411,29 @@ export function registerFiltersTool(server: McpServer, authManager: AuthManager,
       } catch (error) {
         logger.error(`Error in vikunja_filters tool:`, error);
 
-        // Convert errors to proper AORP error responses for tests
-        const operation = action === 'get' && error instanceof Error && error.message.includes('not found') ? 'get-saved-filter' :
-                         action === 'delete' && error instanceof Error && error.message.includes('not found') ? 'delete-saved-filter' :
-                         action === 'create' && error instanceof Error && error.message.includes('already exists') ? 'create-saved-filter' :
-                         action === 'update' && error instanceof Error && error.message.includes('already exists') ? 'update-saved-filter' :
-                         `${action}-filter`;
-
+        const operation = `${action}-filter`;
         const aorpErrorResult = createAorpErrorResponse(operation, error instanceof Error ? error.message : String(error));
 
-        // Create compatibility result with required SimpleAorpResponse properties
-      const compatibilityResult = {
-        content: aorpErrorResult.content,
-        immediate: {
-          status: 'error' as const,
-          key_insight: aorpErrorResult.content.split('\n')[0] || 'Error occurred',
-          confidence: 0.0
-        },
-        summary: aorpErrorResult.content.split('\n')[0] || 'Error occurred',
-        metadata: {
-          timestamp: aorpErrorResult.metadata?.timestamp || new Date().toISOString(),
-          operation: `${action}-filter`,
-          success: false,
-          ...(aorpErrorResult.metadata || {})
-        }
-      };
-
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: formatAorpAsMarkdown(compatibilityResult),
+        const compatibilityResult = {
+          content: aorpErrorResult.content,
+          immediate: {
+            status: 'error' as const,
+            key_insight: aorpErrorResult.content.split('\n')[0] || 'Error occurred',
+            confidence: 0.0,
           },
-        ],
-      };
-    }
-  },
-);
+          summary: aorpErrorResult.content.split('\n')[0] || 'Error occurred',
+          metadata: {
+            timestamp: aorpErrorResult.metadata?.timestamp || new Date().toISOString(),
+            operation,
+            success: false,
+            ...(aorpErrorResult.metadata || {}),
+          },
+        };
+
+        return {
+          content: [{ type: 'text' as const, text: formatAorpAsMarkdown(compatibilityResult) }],
+        };
+      }
+    },
+  );
 }

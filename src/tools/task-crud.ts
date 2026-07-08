@@ -19,6 +19,7 @@ import { TaskFilteringOrchestrator } from './tasks/filtering/index';
 import { createAuthRequiredError, handleFetchError } from '../utils/error-handler';
 import { createSuccessResponse, formatMcpResponse } from '../utils/simple-response';
 import { getProjectNameMap, enrichTasksForDisplay, enrichTasksWithBucketTitles } from '../utils/task-display-enrichment';
+import { resolveSavedFilterQuery } from '../utils/saved-filters';
 
 /**
  * Get session-scoped storage instance
@@ -37,6 +38,15 @@ async function listTasks(
   storage: Awaited<ReturnType<typeof storageManager.getStorage>>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
+    // A `filterId` references a Vikunja saved filter: resolve it to its query string
+    // server-side, then let the normal hybrid engine run it. (Saved filters live in
+    // Vikunja now, not in local storage.)
+    if (args.filterId) {
+      const client = await getClientFromContext();
+      args.filter = await resolveSavedFilterQuery(client, args.filterId);
+      delete args.filterId;
+    }
+
     // Execute the complete filtering workflow using the orchestrator
     const filteringResult = await TaskFilteringOrchestrator.executeTaskFiltering(args, storage);
 

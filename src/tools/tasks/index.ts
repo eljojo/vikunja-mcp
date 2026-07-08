@@ -9,6 +9,7 @@ import type { AuthManager } from '../../auth/AuthManager';
 import type { VikunjaClientFactory } from '../../client/VikunjaClientFactory';
 import { MCPError, ErrorCode } from '../../types';
 import { getClientFromContext, setGlobalClientFactory } from '../../client';
+import { resolveSavedFilterQuery } from '../../utils/saved-filters';
 import { logger } from '../../utils/logger';
 import { storageManager } from '../../storage';
 import { relationSchema, handleRelationSubcommands } from '../tasks-relations';
@@ -44,6 +45,14 @@ async function listTasks(
   storage: Awaited<ReturnType<typeof storageManager.getStorage>>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   try {
+    // A `filterId` references a Vikunja saved filter: resolve it to its query string
+    // server-side, then let the normal hybrid engine run it.
+    if (args.filterId) {
+      const client = await getClientFromContext();
+      args.filter = await resolveSavedFilterQuery(client, args.filterId);
+      delete args.filterId;
+    }
+
     // Execute the complete filtering workflow using the orchestrator
     const filteringResult = await TaskFilteringOrchestrator.executeTaskFiltering(args, storage);
 
