@@ -13,8 +13,10 @@ A Model Context Protocol (MCP) server that enables AI assistants to interact wit
 >   `bucketId`/`intoBucketId` aliases, return the whole forest from `get-tree`, and run bulk updates
 >   sequentially with per-task retry + verification.
 >
-> It is **not** published to npm — the `@democratize-technology/vikunja-mcp` package is upstream and
-> lacks these additions, so run this fork from a local build (see [Installation](#installation)).
+> **Install:** grab the one-click [`.mcpb` bundle](https://github.com/eljojo/vikunja-mcp/releases/latest)
+> for Claude Desktop, or add the `mcpServers` config for Claude Code and other clients — see
+> [Installation](#installation). (Not on npm; the upstream `@democratize-technology/vikunja-mcp`
+> package lacks these additions.)
 
 ## Features
 
@@ -43,19 +45,27 @@ A Model Context Protocol (MCP) server that enables AI assistants to interact wit
 
 ## Installation
 
-Setup is one step: add a `vikunja` entry under `mcpServers` in your MCP client's config file.
+- **Using Claude Desktop?** Install the prebuilt bundle — one click, no JSON (Option 1).
+- **Claude Code or another MCP client?** Add a `vikunja` entry under `mcpServers` in your config
+  file (Option 2 or 3).
 
-**Where that file lives:**
-- **Claude Code** — a `.mcp.json` at your project root, or run `claude mcp add`. (You can also put
-  it in the `mcpServers` block of `~/.claude.json`.)
+### Option 1 — Claude Desktop bundle (`.mcpb`, easiest)
+
+Download **[`vikunja-mcp.mcpb`](https://github.com/eljojo/vikunja-mcp/releases/latest)** from the
+latest release, then in Claude Desktop open **Settings → Extensions** and drag the file in (or just
+open it). It prompts for your Vikunja URL and API token on install — no config files to edit. The
+bundle is a single cross-platform build (macOS / Windows / Linux) produced by the `Build MCP bundle`
+GitHub Action on every `v*` tag.
+
+### Option 2 — `mcpServers` config, run from GitHub (no clone)
+
+Point `npx` at this fork's repo; it builds itself on first launch. Add this under `mcpServers` in
+your client's config file:
+
+- **Claude Code** — `.mcp.json` at your project root (or run `claude mcp add`), or the `mcpServers`
+  block of `~/.claude.json`.
 - **Claude Desktop** — `claude_desktop_config.json`
   (macOS: `~/Library/Application Support/Claude/`, Windows: `%APPDATA%\Claude\`).
-
-Pick one of the two options below for the entry itself.
-
-### Option 1 — run straight from GitHub (no clone)
-
-Point `npx` at this fork's repo; it builds itself on first launch. Paste this into your config:
 
 ```json
 {
@@ -72,7 +82,7 @@ Point `npx` at this fork's repo; it builds itself on first launch. Paste this in
 }
 ```
 
-### Option 2 — local build (pinned checkout / development)
+### Option 3 — `mcpServers` config, local build (pinned checkout / development)
 
 ```bash
 git clone https://github.com/eljojo/vikunja-mcp.git
@@ -98,17 +108,9 @@ Then point the config at the built entrypoint (use an absolute path):
 }
 ```
 
-### Option 3 — Claude Desktop bundle (`.mcpb`)
-
-Claude Desktop can install this as a one-click bundle — no JSON editing. Download
-`vikunja-mcp.mcpb` from the [latest release](https://github.com/eljojo/vikunja-mcp/releases/latest),
-then in Claude Desktop open **Settings → Extensions** and drag the file in (or just open it). It
-prompts for your Vikunja URL and API token on install. The bundle is a single cross-platform build
-(macOS, Windows, Linux) produced by the `Build MCP bundle` GitHub Action on each `v*` tag.
-
 > The upstream `@democratize-technology/vikunja-mcp` npm package does **not** include this fork's
-> Kanban tool or fixes — use Option 1, 2, or 3 above to get them. (`VIKUNJA_API_TOKEN` accepts a
-> `tk_` API token or a JWT; see [Authentication Methods](#authentication-methods).)
+> Kanban tool or fixes — use any option above to get them. (`VIKUNJA_API_TOKEN` accepts a `tk_` API
+> token or a JWT; see [Authentication Methods](#authentication-methods).)
 
 ## Authentication Methods
 
