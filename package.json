@@ -1,6 +1,6 @@
 {
   "name": "@eljojo/vikunja-mcp",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Model Context Protocol server for Vikunja task management — fork of @democratize-technology/vikunja-mcp with Kanban board support and reliability fixes",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
