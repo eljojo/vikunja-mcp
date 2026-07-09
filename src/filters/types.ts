@@ -16,19 +16,25 @@ export type FilterOperator = '=' | '!=' | '>' | '>=' | '<' | '<=' | 'like' | 'LI
 export type LogicalOperator = '&&' | '||';
 
 /**
- * Available fields for filtering tasks
+ * Available fields for filtering tasks. This is the single source of truth for the
+ * DSL — the Zod enum, the field parser, and the validators all derive from it, so a
+ * new field only needs adding here (and to FIELD_TYPES below).
  */
-export type FilterField =
-  | 'done'
-  | 'priority'
-  | 'percentDone'
-  | 'dueDate'
-  | 'assignees'
-  | 'labels'
-  | 'created'
-  | 'updated'
-  | 'title'
-  | 'description';
+export const FILTER_FIELDS = [
+  'done',
+  'priority',
+  'percentDone',
+  'dueDate',
+  'doneAt',
+  'assignees',
+  'labels',
+  'created',
+  'updated',
+  'title',
+  'description',
+] as const;
+
+export type FilterField = (typeof FILTER_FIELDS)[number];
 
 /**
  * Valid field types for validation
@@ -38,6 +44,7 @@ export const FIELD_TYPES: Record<FilterField, 'boolean' | 'number' | 'date' | 's
   priority: 'number',
   percentDone: 'number',
   dueDate: 'date',
+  doneAt: 'date',
   assignees: 'array',
   labels: 'array',
   created: 'date',

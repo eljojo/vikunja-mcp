@@ -9,6 +9,7 @@ import {
   FilterBuilder,
   validateFilterExpression,
   parseFilterString,
+  FILTER_FIELDS,
   type FilterField,
   type FilterOperator,
 } from '../filters';
@@ -80,18 +81,7 @@ const BuildFilterSchema = z.object({
   conditions: z
     .array(
       z.object({
-        field: z.enum([
-          'done',
-          'priority',
-          'percentDone',
-          'dueDate',
-          'assignees',
-          'labels',
-          'created',
-          'updated',
-          'title',
-          'description',
-        ] as const),
+        field: z.enum(FILTER_FIELDS),
         operator: z.enum(['=', '!=', '>', '>=', '<', '<=', 'like', 'in', 'not in'] as const),
         value: z.union([
           z.string(),

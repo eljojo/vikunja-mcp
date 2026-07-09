@@ -85,7 +85,7 @@ describe('Filter Security Tests', () => {
         expect(result.expression).toBeNull();
         expect(result.error).toBeDefined();
         // Security is working - dangerous inputs are rejected at different validation stages
-        expect(result.error?.message).toMatch(/Unexpected token|Invalid number|Invalid filter syntax|Expected condition after logical operator|invalid characters|Expected value/);
+        expect(result.error?.message).toMatch(/Unexpected token|Invalid number|Invalid filter syntax|Expected condition after logical operator|invalid characters|Expected value|Unknown filter field/);
       });
     });
 
@@ -102,7 +102,7 @@ describe('Filter Security Tests', () => {
         expect(result.expression).toBeNull();
         expect(result.error).toBeDefined();
         // May fail at different validation stages
-        expect(result.error?.message).toMatch(/Unexpected token|Invalid number|Invalid filter syntax|Expected condition after logical operator|invalid characters|Expected value/);
+        expect(result.error?.message).toMatch(/Unexpected token|Invalid number|Invalid filter syntax|Expected condition after logical operator|invalid characters|Expected value|Unknown filter field/);
       });
     });
 
@@ -307,7 +307,7 @@ describe('Filter Security Tests', () => {
         expect(result.expression).toBeNull();
         expect(result.error).toBeDefined();
         // Security is working - dangerous characters are blocked
-        expect(result.error?.message).toMatch(/Unexpected token|Invalid number|Invalid filter syntax|Expected condition after logical operator|invalid characters|Expected value/);
+        expect(result.error?.message).toMatch(/Unexpected token|Invalid number|Invalid filter syntax|Expected condition after logical operator|invalid characters|Expected value|Unknown filter field/);
       });
     });
   });

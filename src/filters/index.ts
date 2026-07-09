@@ -40,4 +40,4 @@ export type {
   TaskListingArgs,
 } from './types';
 
-export { FIELD_TYPES } from './types';
+export { FIELD_TYPES, FILTER_FIELDS } from './types';

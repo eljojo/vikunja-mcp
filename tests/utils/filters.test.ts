@@ -262,6 +262,37 @@ describe('Consolidated Filter Utilities', () => {
       expect(result.expression).not.toBeNull();
       expect(result.error).toBeUndefined();
     });
+
+    it('should parse doneAt as a date field', () => {
+      const result = parseFilterString('doneAt > now-7d');
+      expect(result.error).toBeUndefined();
+      expect(result.expression?.groups[0].conditions[0]).toEqual({
+        field: 'doneAt',
+        operator: '>',
+        value: 'now-7d',
+      });
+    });
+
+    it('names an unknown field and suggests the camelCase form', () => {
+      const result = parseFilterString('due_date > now');
+      expect(result.expression).toBeNull();
+      expect(result.error?.message).toContain('Unknown filter field "due_date"');
+      expect(result.error?.message).toContain('Did you mean "dueDate"?');
+    });
+
+    it('suggests doneAt for the snake_case done_at', () => {
+      const result = parseFilterString('done_at > now-7d');
+      expect(result.expression).toBeNull();
+      expect(result.error?.message).toContain('Did you mean "doneAt"?');
+    });
+
+    it('lists available fields when an unknown field has no camelCase match', () => {
+      const result = parseFilterString('bogus = 1');
+      expect(result.expression).toBeNull();
+      expect(result.error?.message).toContain('Unknown filter field "bogus"');
+      expect(result.error?.message).not.toContain('Did you mean');
+      expect(result.error?.message).toContain('Available fields:');
+    });
   });
 
   describe('parseSimpleFilter', () => {

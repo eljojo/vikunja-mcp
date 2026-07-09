@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 import type { Task } from 'node-vikunja';
+import { FILTER_FIELDS, FIELD_TYPES } from './types';
 import type {
   FilterCondition,
   FilterExpression,
@@ -59,10 +60,7 @@ const REPEATED_CHAR_PATTERN = /(.)\1{20,}/;
 /**
  * Zod schemas for validation
  */
-const FilterFieldSchema = z.enum([
-  'done', 'priority', 'percentDone', 'dueDate', 'assignees',
-  'labels', 'created', 'updated', 'title', 'description'
-]);
+const FilterFieldSchema = z.enum(FILTER_FIELDS);
 
 const FilterOperatorSchema = z.enum([
   '=', '!=', '>', '>=', '<', '<=', 'like', 'LIKE', 'in', 'not in'
@@ -409,23 +407,43 @@ function parseOperator(state: ParseState): FilterOperator | null {
 }
 
 /**
- * Parse field name
+ * Suggest the correct field for an unrecognized one — chiefly the camelCase form of a
+ * snake_case field (due_date → dueDate, done_at → doneAt, percent_done → percentDone).
+ */
+function suggestField(name: string): string | undefined {
+  const camel = name.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+  return (FILTER_FIELDS as readonly string[]).includes(camel) ? camel : undefined;
+}
+
+/**
+ * Parse field name. Returns null only when there is no identifier at the current
+ * position (end of input, a paren, etc.) so callers can raise "Expected condition".
+ * An identifier that isn't a known field throws a message naming it, rather than
+ * letting it surface as a misleading generic parse error.
  */
 function parseField(state: ParseState): FilterField | null {
-  const fields: FilterField[] = ['done', 'priority', 'percentDone', 'dueDate', 'assignees',
-                                 'labels', 'created', 'updated', 'title', 'description'];
-
-  for (const field of fields) {
-    const substr = state.input.substring(state.position, state.position + field.length);
-    if (substr === field &&
-        (state.position + field.length >= state.length ||
-         /[\s=!<>]/.test(state.input[state.position + field.length] || ''))) {
-      state.position += field.length;
-      return field;
-    }
+  const start = state.position;
+  let end = start;
+  while (end < state.length && /[A-Za-z0-9_]/.test(state.input[end] || '')) {
+    end++;
   }
 
-  return null;
+  const identifier = state.input.substring(start, end);
+  if (!identifier) {
+    return null;
+  }
+
+  if ((FILTER_FIELDS as readonly string[]).includes(identifier)) {
+    state.position = end;
+    return identifier as FilterField;
+  }
+
+  const suggestion = suggestField(identifier);
+  const hint = suggestion ? ` Did you mean "${suggestion}"?` : '';
+  throw new Error(
+    `Unknown filter field "${identifier}".${hint} ` +
+      `Available fields: ${FILTER_FIELDS.join(', ')}`,
+  );
 }
 
 /**
@@ -483,18 +501,7 @@ function convertValue(value: string, field: FilterField, operator: FilterOperato
     return value.split(',').map(v => v.trim());
   }
 
-  const fieldType = {
-    done: 'boolean',
-    priority: 'number',
-    percentDone: 'number',
-    dueDate: 'date',
-    assignees: 'array',
-    labels: 'array',
-    created: 'date',
-    updated: 'date',
-    title: 'string',
-    description: 'string',
-  }[field];
+  const fieldType = FIELD_TYPES[field];
 
   if (fieldType === 'boolean') {
     return value === 'true';
@@ -770,32 +777,10 @@ export function parseFilterString(filterStr: string): ParseResult {
  */
 function validateFieldTypeAndValue(field: FilterField, operator: FilterOperator, value: unknown): string[] {
   const errors: string[] = [];
-  const fieldType = {
-    done: 'boolean',
-    priority: 'number',
-    percentDone: 'number',
-    dueDate: 'date',
-    assignees: 'array',
-    labels: 'array',
-    created: 'date',
-    updated: 'date',
-    title: 'string',
-    description: 'string',
-  }[field];
+  const fieldType = FIELD_TYPES[field];
 
   // Basic field validation
-  if (!Object.keys({
-    done: 'boolean',
-    priority: 'number',
-    percentDone: 'number',
-    dueDate: 'date',
-    assignees: 'array',
-    labels: 'array',
-    created: 'date',
-    updated: 'date',
-    title: 'string',
-    description: 'string',
-  }).includes(field)) {
+  if (!Object.keys(FIELD_TYPES).includes(field)) {
     return ['Invalid field name'];
   }
 

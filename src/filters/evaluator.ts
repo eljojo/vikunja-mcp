@@ -28,6 +28,13 @@ export function evaluateCondition(task: Task, condition: FilterCondition): boole
       }
       return evaluateDateComparison(task.due_date, operator, String(value));
 
+    case 'doneAt':
+      if (!task.done_at) {
+        // Not-yet-done tasks (no done_at) are only matched by != operator
+        return operator === '!=';
+      }
+      return evaluateDateComparison(task.done_at, operator, String(value));
+
     case 'created':
       if (!task.created) return false;
       return evaluateDateComparison(task.created, operator, String(value));

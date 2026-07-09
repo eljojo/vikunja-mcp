@@ -15,6 +15,7 @@
  */
 
 import { z } from 'zod';
+import { FILTER_FIELDS } from '../filters';
 import type { FilterExpression, FilterField, FilterOperator, LogicalOperator } from '../filters';
 import { MCPError, ErrorCode } from '../types/errors';
 
@@ -36,10 +37,7 @@ const MAX_STRING_LENGTH = 1000;
 /**
  * Zod schemas for type-safe validation
  */
-const FieldSchema: z.ZodType<FilterField> = z.enum([
-  'done', 'priority', 'percentDone', 'dueDate', 'assignees',
-  'labels', 'created', 'updated', 'title', 'description'
-]);
+const FieldSchema: z.ZodType<FilterField> = z.enum(FILTER_FIELDS);
 
 const OperatorSchema: z.ZodType<FilterOperator> = z.enum([
   '=', '!=', '>', '>=', '<', '<=', 'like', 'in', 'not in'
