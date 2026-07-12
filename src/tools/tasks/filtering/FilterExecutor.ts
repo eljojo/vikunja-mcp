@@ -80,6 +80,7 @@ export const FilterExecutor = {
       const {
         serverSideFilteringUsed,
         serverSideFilteringAttempted,
+        hasMore: browseHasMore,
       } = filteringResult.metadata;
 
       // Additional memory protection: validate actual loaded task count
@@ -133,14 +134,17 @@ export const FilterExecutor = {
       );
 
       // Attach pagination so the response can hint whether more results exist.
-      // A full returned page (returned === perPage) implies there may be a next page.
+      // A plain browse pages internally to fill perPage and reports hasMore
+      // directly (the server's 50-cap means `returned >= perPage` can't be
+      // trusted). Otherwise fall back to that heuristic: a full page implies a
+      // possible next page; the full-load path fetched everything, so it's false.
       const perPage = params.per_page ?? processedTasks.length;
       const page = params.page ?? 1;
       filteringMetadata.pagination = {
         page,
         perPage,
         returned: processedTasks.length,
-        hasMore: perPage > 0 && processedTasks.length >= perPage,
+        hasMore: browseHasMore ?? (perPage > 0 && processedTasks.length >= perPage),
       };
 
       // Build return object, only including defined properties to satisfy exactOptionalPropertyTypes

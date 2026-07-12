@@ -48,6 +48,14 @@ export interface FilteringMetadata {
   serverSideFilteringAttempted: boolean;
   clientSideFiltering: boolean;
   filteringNote: string;
+  /**
+   * For a plain (unfiltered) browse window: whether at least one task exists
+   * beyond the returned page, so the caller can offer a next-page follow-up.
+   * The server caps a page at 50, so this can't be derived from `returned` vs a
+   * larger requested `perPage`. Undefined when not applicable (the full-load
+   * path fetches the whole set, so nothing is left beyond it).
+   */
+  hasMore?: boolean;
 }
 
 /**

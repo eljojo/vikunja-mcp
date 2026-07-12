@@ -24,6 +24,23 @@ jest.mock('../../src/utils/logger', () => ({
 
 const mockGetClientFromContext = getClientFromContext as jest.MockedFunction<typeof getClientFromContext>;
 
+/** Build `n` tasks and an offset-aware getAllTasks that honors page/per_page. */
+function offsetAwareBacking(n: number): { backing: Task[]; getAllTasks: jest.Mock } {
+  const backing: Task[] = Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    title: `Task ${i + 1}`,
+    description: '',
+    done: false,
+    priority: 0,
+  })) as Task[];
+  const getAllTasks = jest.fn((params: any) => {
+    const size = params?.per_page ?? 50;
+    const page = params?.page ?? 1;
+    return Promise.resolve(backing.slice((page - 1) * size, (page - 1) * size + size));
+  });
+  return { backing, getAllTasks };
+}
+
 describe('Tasks Memory Protection', () => {
   let mockServer: MockServer;
   let mockAuthManager: MockAuthManager;
@@ -150,29 +167,28 @@ describe('Tasks Memory Protection', () => {
       expect(result.content[0].text).toContain('## ✅ Success');
     });
 
-    it('should respect user-provided pagination', async () => {
-      const mockTasks: Task[] = Array.from({ length: 25 }, (_, i) => ({
-        id: i + 1,
-        title: `Task ${i + 1}`,
-        description: '',
-        done: false,
-        priority: 0
-      })) as Task[];
+    it('respects user pagination by windowing 50-row server chunks', async () => {
+      // The server caps a page at 50, so a browse pages 50-row chunks and slices
+      // the requested (page, perPage) window rather than passing them through.
+      const { getAllTasks } = offsetAwareBacking(60);
+      mockClient.tasks.getAllTasks = getAllTasks;
 
-      mockClient.tasks.getAllTasks.mockResolvedValue(mockTasks);
-
-      await toolHandler({
+      const result = await toolHandler({
         subcommand: 'list',
         page: 2,
         perPage: 25
       });
 
-      expect(mockClient.tasks.getAllTasks).toHaveBeenCalledWith(
+      // Server is fetched at its 50-row cap (page 1 covers rows 1-50, which the
+      // pager slices to the page-2-of-25 window). Window contents themselves are
+      // asserted in the ClientSideFilteringStrategy unit test.
+      expect(getAllTasks).toHaveBeenCalledWith(
         expect.objectContaining({
-          per_page: 25,
-          page: 2
+          per_page: 50,
+          page: 1
         })
       );
+      expect(result.content[0].text).toContain('## ✅ Success');
     });
   });
 
@@ -239,26 +255,22 @@ describe('Tasks Memory Protection', () => {
       process.env.VIKUNJA_MAX_TASKS_LIMIT = '100';
     });
 
-    it('should warn when API returns more tasks than expected', async () => {
-      // Mock API returning more tasks than requested
-      const mockTasks: Task[] = Array.from({ length: 120 }, (_, i) => ({
-        id: i + 1,
-        title: `Task ${i + 1}`,
-        description: '',
-        done: false,
-        priority: 0
-      })) as Task[];
-
-      mockClient.tasks.getAllTasks.mockResolvedValue(mockTasks);
+    it('should warn when the full-load path exceeds recommended limits', async () => {
+      // A full-load read (here: done filter) pages the whole set into memory, so
+      // post-load validation is where an over-limit count is caught. 120 loaded
+      // vs a recommended 100 → warn (but under the 1.5x hard limit → still succeeds).
+      const { getAllTasks } = offsetAwareBacking(120);
+      mockClient.tasks.getAllTasks = getAllTasks;
 
       const result = await toolHandler({
         subcommand: 'list',
-        perPage: 50 // Request 50, but API returns 120
+        done: false, // forces a full-set load
+        perPage: 50
       });
 
       // Should succeed but log warning
       expect(result.content[0].text).toContain('## ✅ Success');
-      
+
       const mockLogger = require('../../src/utils/logger').logger;
       expect(mockLogger.warn).toHaveBeenCalledWith(
         'Loaded task count exceeds recommended limits',
@@ -269,22 +281,16 @@ describe('Tasks Memory Protection', () => {
       );
     });
 
-    it('should fail hard when API returns extremely large datasets', async () => {
-      // Mock API returning way more tasks than the hard limit
-      const mockTasks: Task[] = Array.from({ length: 200 }, (_, i) => ({
-        id: i + 1,
-        title: `Task ${i + 1}`,
-        description: '',
-        done: false,
-        priority: 0
-      })) as Task[];
-
-      mockClient.tasks.getAllTasks.mockResolvedValue(mockTasks);
+    it('should fail hard when the full-load path returns an extremely large dataset', async () => {
+      // 200 loaded is past the 1.5x hard limit (150) → reject rather than process.
+      const { getAllTasks } = offsetAwareBacking(200);
+      mockClient.tasks.getAllTasks = getAllTasks;
 
       await expect(
         toolHandler({
           subcommand: 'list',
-          perPage: 50 // Request 50, but API returns 200 (2x over hard limit)
+          done: false, // forces a full-set load
+          perPage: 50
         })
       ).rejects.toThrow(MCPError);
     });
