@@ -73,6 +73,30 @@ describe('Tasks CRUD - Final Coverage', () => {
       expect(result.content[0].type).toBe('text');
     });
 
+    it('raw:true returns the stored fields verbatim (round-trippable)', async () => {
+      const mockTask = {
+        id: 42,
+        title: "Amandine's café",
+        // Multi-line description with an entity the display path would mangle:
+        // the rendered read HTML-strips and joins newlines with " / ".
+        description: 'line one\nline two &amp; more',
+        done: false,
+      };
+      mockClient.tasks.getTask.mockResolvedValue(mockTask);
+
+      const result = await getTask({ id: 42, raw: true });
+
+      // Verbatim: comments are never fetched, and the raw text survives intact.
+      expect(mockClient.tasks.getTask).toHaveBeenCalledWith(42);
+      const text = result.content[0].text;
+      expect(text).toContain('Raw task 42');
+      // The JSON block preserves the newline (as \n) and the raw entity.
+      expect(text).toContain('line one\\nline two &amp; more');
+      // JSON round-trips back to the exact stored object.
+      const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1);
+      expect(JSON.parse(json)).toEqual(mockTask);
+    });
+
     it('should enrich bucket id from the requested view', async () => {
       mockClient.tasks.getTask.mockResolvedValue({
         id: 16,

@@ -135,7 +135,7 @@ export function registerTaskCrudTool(
 ): void {
   server.tool(
     'vikunja_task_crud',
-    'Manage individual tasks: create, get, update, delete, list. A single-project list shows a comment count per card; pass includeComments:true for a deep-read that inlines every task\'s full comment bodies.',
+    'Manage individual tasks: create, get, update, delete, list. A single-project list shows a comment count per card; pass includeComments:true for a deep-read that inlines every task\'s full comment bodies. On get, pass raw:true for a verbatim JSON dump of the stored fields (round-trippable — no HTML-strip or newline-flatten).',
     {
       operation: z.enum(['create', 'get', 'update', 'delete', 'list']),
       // Task creation/update fields
@@ -155,6 +155,9 @@ export function registerTaskCrudTool(
       repeatMode: z.enum(['day', 'week', 'month', 'year']).optional(),
       // Query fields
       id: z.number().optional(),
+      // get: return the task's stored fields verbatim (raw JSON) instead of the
+      // display rendering, so a field can be read and rewritten without loss.
+      raw: z.boolean().optional(),
       filter: z.string().optional(),
       filterId: z.string().optional(),
       page: z.number().optional(),

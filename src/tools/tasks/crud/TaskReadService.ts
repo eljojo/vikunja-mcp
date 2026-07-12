@@ -15,6 +15,13 @@ export interface GetTaskArgs {
   projectId?: number;
   viewId?: number;
   view_id?: number;
+  /**
+   * Return the task's stored fields verbatim (raw JSON) instead of the display
+   * rendering. The rendered read HTML-strips and newline-flattens description
+   * text, so it can't be round-tripped; `raw` is the read a cleanup/backfill
+   * sweep needs to decode-and-rewrite a field without guessing its structure.
+   */
+  raw?: boolean;
   sessionId?: string;
 }
 
@@ -37,6 +44,21 @@ export async function getTask(args: GetTaskArgs): Promise<{ content: Array<{ typ
 
     const client = await getClientFromContext();
     const task = await client.tasks.getTask(args.id);
+
+    // Verbatim read: the stored task object, untouched — no HTML-strip, no
+    // newline-flatten, no verbosity trimming — so a caller can read a field and
+    // write it back without corrupting line breaks or decoding entities blind.
+    if (args.raw) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Raw task ${args.id} (verbatim stored fields):\n\n\`\`\`json\n${JSON.stringify(task, null, 2)}\n\`\`\``,
+          },
+        ],
+      };
+    }
+
     const enrichedTask = viewId === undefined
       ? task
       : ((await enrichTasksWithBucketIds(
