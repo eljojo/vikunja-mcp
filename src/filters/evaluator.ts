@@ -6,6 +6,18 @@ import type { Task } from 'node-vikunja';
 import type { FilterCondition, FilterGroup, FilterExpression } from './types';
 
 /**
+ * Vikunja stores an unset date as the sentinel `0001-01-01T00:00:00Z`, not null.
+ * That string is truthy, so a naive `!task.due_date` guard misses it and the
+ * date comparison then treats a dateless task as due in year 1 — making
+ * `dueDate < <anything>` match every task that has no real due date. Treat the
+ * sentinel (and empty/missing) as "no date", the same way the display layer's
+ * hasRealDueDate does.
+ */
+function isRealDate(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && !value.startsWith('0001-01-01');
+}
+
+/**
  * Evaluates a filter condition against a task
  */
 export function evaluateCondition(task: Task, condition: FilterCondition): boolean {
@@ -22,25 +34,25 @@ export function evaluateCondition(task: Task, condition: FilterCondition): boole
       return evaluateComparison(task.percent_done || 0, operator, Number(value));
 
     case 'dueDate':
-      if (!task.due_date) {
-        // Null due dates are only matched by != operator
+      if (!isRealDate(task.due_date)) {
+        // No real due date: only != can match.
         return operator === '!=';
       }
       return evaluateDateComparison(task.due_date, operator, String(value));
 
     case 'doneAt':
-      if (!task.done_at) {
+      if (!isRealDate(task.done_at)) {
         // Not-yet-done tasks (no done_at) are only matched by != operator
         return operator === '!=';
       }
       return evaluateDateComparison(task.done_at, operator, String(value));
 
     case 'created':
-      if (!task.created) return false;
+      if (!isRealDate(task.created)) return false;
       return evaluateDateComparison(task.created, operator, String(value));
 
     case 'updated':
-      if (!task.updated) return false;
+      if (!isRealDate(task.updated)) return false;
       return evaluateDateComparison(task.updated, operator, String(value));
 
     case 'title':
