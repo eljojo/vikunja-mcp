@@ -8,6 +8,7 @@ import { getClientFromContext } from '../../../client';
 import type { Task, VikunjaClient } from 'node-vikunja';
 import {
   validateDateString,
+  expandDateOnly,
   validateId,
   convertRepeatConfiguration,
   buildWritableTaskSnapshot,
@@ -240,7 +241,7 @@ function buildUpdateData(currentTask: Task, args: UpdateTaskArgs): Task {
     ...(bucketId !== undefined && { bucket_id: bucketId }),
     ...(args.title !== undefined && { title: args.title }),
     ...(args.description !== undefined && { description: args.description }),
-    ...(args.dueDate !== undefined && { due_date: args.dueDate }),
+    ...(args.dueDate !== undefined && { due_date: expandDateOnly(args.dueDate) }),
     ...(args.priority !== undefined && { priority: args.priority }),
     ...(args.done !== undefined && { done: args.done }),
     // Handle repeat configuration for updates

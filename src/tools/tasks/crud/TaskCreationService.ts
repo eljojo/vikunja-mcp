@@ -17,7 +17,7 @@ import { RETRY_CONFIG } from '../../../utils/retry';
 import { transformApiError, handleFetchError } from '../../../utils/error-handler';
 import { sanitizeUserText } from '../../../utils/validation';
 import { AUTH_ERROR_MESSAGES } from '../constants';
-import { validateDateString, validateId, convertRepeatConfiguration } from '../validation';
+import { validateDateString, expandDateOnly, validateId, convertRepeatConfiguration } from '../validation';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
 import { getTaskWithRelationships } from '../relationship-verification';
@@ -96,7 +96,7 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
 
     // Add optional fields with sanitized values
     if (sanitizedDescription !== undefined) newTask.description = sanitizedDescription;
-    if (args.dueDate !== undefined) newTask.due_date = args.dueDate;
+    if (args.dueDate !== undefined) newTask.due_date = expandDateOnly(args.dueDate);
     if (args.priority !== undefined) newTask.priority = args.priority;
 
     // Handle repeat configuration

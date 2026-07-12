@@ -20,6 +20,17 @@ export function validateDateString(date: string, fieldName: string): void {
 }
 
 /**
+ * Vikunja's API rejects a bare calendar date (`2026-07-14`) with an opaque
+ * "Invalid model provided: Bad Request" — it wants a full RFC3339 timestamp.
+ * Expand a date-only string to noon UTC, which keeps the calendar day stable
+ * across every real timezone (a midnight-UTC expansion slips to the previous
+ * day anywhere west of UTC). A string already carrying a time is returned as-is.
+ */
+export function expandDateOnly(date: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T12:00:00Z` : date;
+}
+
+/**
  * Validates that an ID is a positive integer
  * @deprecated Use validateSharedId from '../../../utils/validation' instead
  */

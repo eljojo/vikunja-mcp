@@ -87,6 +87,17 @@ describe('createTask - Kanban bucket placement on create', () => {
     expect(service.getProjectViews).not.toHaveBeenCalled();
   });
 
+  it('expands a date-only dueDate to a full timestamp before sending to the API', async () => {
+    // Regression: a bare `2026-07-14` was passed through and Vikunja rejected it
+    // with "Invalid model provided: Bad Request".
+    await createTask({ projectId: 3, title: 'T', dueDate: '2026-07-14' });
+
+    expect(service.createTask).toHaveBeenCalledWith(
+      3,
+      expect.objectContaining({ due_date: '2026-07-14T12:00:00Z' }),
+    );
+  });
+
   it('passes free-text title/description through without blocking or HTML-escaping', async () => {
     // Regression: these used to be rejected as "potentially dangerous content"
     // (the word "master") and escaped ("up/down = presets" -> "up&#x2F;down &#x3D; ...").
