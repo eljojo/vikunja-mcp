@@ -97,6 +97,37 @@ describe('Tasks CRUD - Final Coverage', () => {
       expect(JSON.parse(json)).toEqual(mockTask);
     });
 
+    it('resolves due date and kanban column so get is a superset of the list row', async () => {
+      mockClient.tasks.getTask.mockResolvedValue({
+        id: 55,
+        project_id: 999,
+        title: 'Buy oat milk',
+        done: false,
+        due_date: '2026-07-20T00:00:00Z',
+        labels: [{ id: 3, title: 'errand' }],
+      });
+      // Board-view resolution feeds the "Column" the project list also shows.
+      mockClient.tasks.getProjectViews = jest
+        .fn()
+        .mockResolvedValue([{ id: 77, view_kind: 'kanban' }]);
+      mockClient.tasks.getBucketsForView.mockResolvedValue([
+        { id: 1, title: 'To Do', tasks: [{ id: 55 }] },
+      ]);
+      mockClient.tasks.getTaskComments = jest.fn().mockResolvedValue([]);
+
+      const result = await getTask({ id: 55 });
+      const markdown = result.content[0].text;
+
+      // due_date survives verbosity (would be stripped as a SCHEDULING field)...
+      expect(markdown).toContain('Due');
+      expect(markdown).toContain('2026-07-20');
+      // ...the kanban column is resolved without needing an explicit viewId...
+      expect(markdown).toContain('Column');
+      expect(markdown).toContain('To Do');
+      // ...and labels still render.
+      expect(markdown).toContain('errand');
+    });
+
     it('should enrich bucket id from the requested view', async () => {
       mockClient.tasks.getTask.mockResolvedValue({
         id: 16,

@@ -8,6 +8,7 @@ import { validateId } from '../validation';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
 import { enrichTasksWithBucketIds } from '../../../client/applyTaskServiceCompatibility';
+import { enrichTasksWithBucketTitles } from '../../../utils/task-display-enrichment';
 import type { TaskComment } from '../../../types/vikunja';
 
 export interface GetTaskArgs {
@@ -71,6 +72,11 @@ export async function getTask(args: GetTaskArgs): Promise<{ content: Array<{ typ
           ],
           viewId,
         ))[0] ?? task);
+
+    // Resolve the kanban column so a get carries the same "Column" the project
+    // list shows — the list does this for every card, so a get shouldn't be the
+    // less-informative read. Best-effort: mutates in place, never fails the get.
+    await enrichTasksWithBucketTitles(client.tasks, [enrichedTask]);
 
     const response = createTaskResponse(
       'get-task',

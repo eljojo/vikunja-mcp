@@ -10,14 +10,20 @@ import type { Task } from '../../../types/vikunja';
 import type { ResponseData } from '../../../utils/simple-response';
 import { applyResponseVerbosity, resolveResponseConfig } from '../../../transforms/response-verbosity';
 
+// A single-task get/create/update must be at least as informative as the row
+// the same task shows in a project list. `due_date` is otherwise a SCHEDULING
+// field (dropped below DETAILED verbosity); `bucket_title` is the enriched
+// kanban column. Both would be stripped by verbosity without being pinned here.
 const SINGLE_TASK_REQUIRED_FIELDS = [
   'id',
   'title',
   'done',
   'project_id',
   'bucket_id',
+  'bucket_title',
   'labels',
   'assignees',
+  'due_date',
 ];
 
 /**
