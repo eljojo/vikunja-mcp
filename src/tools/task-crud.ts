@@ -18,7 +18,7 @@ import type { CreateTaskArgs, UpdateTaskArgs, DeleteTaskArgs, GetTaskArgs } from
 import { TaskFilteringOrchestrator } from './tasks/filtering/index';
 import { createAuthRequiredError, handleFetchError } from '../utils/error-handler';
 import { createSuccessResponse, formatMcpResponse } from '../utils/simple-response';
-import { getProjectNameMap, enrichTasksForDisplay, enrichTasksWithBucketTitles } from '../utils/task-display-enrichment';
+import { getProjectNameMap, enrichTasksForDisplay, enrichTasksWithBucketTitles, enrichTasksWithComments } from '../utils/task-display-enrichment';
 import { resolveSavedFilterQuery } from '../utils/saved-filters';
 
 /**
@@ -77,6 +77,10 @@ async function listTasks(
       enrichTasksForDisplay(tasks, projectNames, { showUpdated: Boolean(args.showUpdated) });
       if (singleProject) {
         await enrichTasksWithBucketTitles(client.tasks, tasks);
+        // A single-project ("zoom in") read is deliberate enough to pay one call
+        // per task for comment context: a count by default, full bodies on
+        // includeComments (the deep-read). Cross-project scans stay cheap.
+        await enrichTasksWithComments(client.tasks, tasks, { full: Boolean(args.includeComments) });
       }
     } catch (error) {
       logger.debug('Task display enrichment skipped', {
@@ -131,7 +135,7 @@ export function registerTaskCrudTool(
 ): void {
   server.tool(
     'vikunja_task_crud',
-    'Manage individual tasks: create, get, update, delete, list',
+    'Manage individual tasks: create, get, update, delete, list. A single-project list shows a comment count per card; pass includeComments:true for a deep-read that inlines every task\'s full comment bodies.',
     {
       operation: z.enum(['create', 'get', 'update', 'delete', 'list']),
       // Task creation/update fields
@@ -162,6 +166,9 @@ export function registerTaskCrudTool(
       done: z.boolean().optional(),
       // Include a relative "updated Xmo ago" stale signal per task (off by default)
       showUpdated: z.boolean().optional(),
+      // Deep-read: inline each task's full comment bodies. Single-project lists
+      // only; a plain single-project list already shows a per-card comment count.
+      includeComments: z.boolean().optional(),
       // Session ID for AORP response tracking
       sessionId: z.string().optional(),
     },

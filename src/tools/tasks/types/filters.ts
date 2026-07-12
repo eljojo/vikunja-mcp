@@ -89,6 +89,8 @@ export interface TaskListingArgs extends FilteringArgs {
   sessionId?: string;
   /** When true, include a relative "updated Xmo ago" stale signal per task */
   showUpdated?: boolean;
+  /** Deep-read: inline each task's full comment bodies (single-project lists only) */
+  includeComments?: boolean;
 }
 
 /**

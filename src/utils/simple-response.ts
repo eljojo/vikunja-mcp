@@ -407,6 +407,9 @@ function formatTaskTable(tasks: Task[], options?: TaskTableOptions): string {
   const showLabels = tasks.some((t) => Array.isArray(t.labels) && t.labels.length > 0);
   const showUpdated = tasks.some((t) => Boolean(t.updated_relative));
   const showNotes = tasks.some((t) => Boolean(t.description) && Boolean(htmlToPlainText(t.description as string)));
+  // 💬 count: only populated on single-project lists. A card carrying hidden
+  // comment context must not look identical to an empty one.
+  const showComments = tasks.some((t) => (t.comment_count ?? 0) > 0);
 
   const columns: string[] = ['ID'];
   if (showDone) columns.push('✓');
@@ -416,6 +419,7 @@ function formatTaskTable(tasks: Task[], options?: TaskTableOptions): string {
   if (showPriority) columns.push('Pri');
   if (showLabels) columns.push('Labels');
   if (showUpdated) columns.push('Updated');
+  if (showComments) columns.push('💬');
   if (showNotes) columns.push('Notes');
 
   const rows = tasks.map((task) => {
@@ -427,6 +431,7 @@ function formatTaskTable(tasks: Task[], options?: TaskTableOptions): string {
     if (showPriority) cells.push((task.priority ?? 0) > 0 ? String(task.priority) : '');
     if (showLabels) cells.push(task.labels?.map((l) => l.title).join(', ') ?? '');
     if (showUpdated) cells.push(task.updated_relative ?? '');
+    if (showComments) cells.push((task.comment_count ?? 0) > 0 ? String(task.comment_count) : '');
     if (showNotes) cells.push(task.description ? escapeCell(htmlToPlainText(task.description)) : '');
     return `| ${cells.join(' | ')} |`;
   });
@@ -455,10 +460,35 @@ function formatTasksGroupedByProject(tasks: Task[], options?: TaskTableOptions):
   const sections = Array.from(groups.entries()).map(([pid, group]) => {
     const name = group[0]?.project_title;
     const header = name ? `${name} (ID: ${pid})` : `Project ${pid}`;
-    return `### 📁 ${header} — ${group.length} task(s)\n\n${formatTaskTable(group, options)}`;
+    return `### 📁 ${header} — ${group.length} task(s)\n\n${formatTaskTable(group, options)}${formatDeepReadComments(group)}`;
   });
 
   return sections.join('\n') + '\n';
+}
+
+/**
+ * Deep-read (includeComments) only: below the task table, spell out the full
+ * comment bodies for each task that carries them. The compact table can't hold
+ * a long trip debrief, so these get their own blocks. Tasks with only a count
+ * (no bodies) render nothing here — the 💬 column already flags them.
+ */
+function formatDeepReadComments(tasks: Task[]): string {
+  const blocks: string[] = [];
+  for (const task of tasks) {
+    const comments = task.comments;
+    if (!comments || comments.length === 0) {
+      continue;
+    }
+    const lines = comments.map((c) => {
+      const body = htmlToPlainText(c.comment ?? '').replace(/\s*\n\s*/g, ' ').trim();
+      return body ? `- ${body}` : '';
+    }).filter(Boolean);
+    blocks.push(`#### 💬 ${task.title} (ID: ${task.id}) — ${comments.length} comment(s)\n${lines.join('\n')}`);
+  }
+  if (blocks.length === 0) {
+    return '';
+  }
+  return '\n' + blocks.join('\n\n') + '\n';
 }
 
 /**

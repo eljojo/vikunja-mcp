@@ -161,6 +161,39 @@ export async function enrichTasksWithBucketTitles(
 }
 
 /**
+ * Attach each task's comments. Always sets `comment_count`; sets the full
+ * `comments` array only when `full` is requested (the deep-read path). Costs
+ * one API call per task, so the caller restricts this to single-project ("zoom
+ * in") lists and never a cross-project scan. Best-effort: a task whose comments
+ * can't be read keeps no count rather than failing the whole list.
+ */
+export async function enrichTasksWithComments(
+  taskService: TaskService,
+  tasks: Task[],
+  options: { full?: boolean } = {},
+): Promise<void> {
+  await Promise.all(
+    tasks.map(async (task) => {
+      if (task.id === undefined) {
+        return;
+      }
+      try {
+        const comments = await taskService.getTaskComments(task.id);
+        task.comment_count = comments.length;
+        if (options.full) {
+          task.comments = comments;
+        }
+      } catch (error) {
+        logger.debug('Comment enrichment skipped for task', {
+          taskId: task.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }),
+  );
+}
+
+/**
  * Attach display-only fields (project name, optional stale signal) to tasks.
  * Mutates and returns the same array for convenience.
  */

@@ -142,6 +142,11 @@ export interface Task {
   updated_relative?: string;
   /** Kanban column (board-view bucket) title this task sits in */
   bucket_title?: string;
+  /** Comment count, populated for single-project ("zoom in") lists so a card
+   *  carrying hidden context can't look identical to an empty one */
+  comment_count?: number;
+  /** Full comment bodies, populated only for a deliberate deep-read (includeComments) */
+  comments?: TaskComment[];
 }
 
 export interface TaskReminder {
