@@ -81,7 +81,7 @@ describe('applyTaskServiceCompatibility', () => {
       '/projects/13/views/52/tasks',
       'GET',
       undefined,
-      { params: { page: 1, per_page: 500 } },
+      { params: { page: 1, per_page: 50 } },
     );
   });
 
@@ -137,6 +137,31 @@ describe('applyTaskServiceCompatibility', () => {
     await expect(getBucketsForView(service, 13, 52)).rejects.toThrow(
       'projects.views_buckets permission',
     );
+  });
+
+  it('reads every page of a board, since the server caps per_page and pages inside each bucket', async () => {
+    const allTasks = Array.from({ length: 54 }, (_, i) => ({ id: i + 1 }));
+    const request = jest.fn(async (
+      _endpoint: unknown,
+      _method: unknown,
+      _body: unknown,
+      options?: { params?: { page?: number; per_page?: number } },
+    ) => {
+      const page = options?.params?.page ?? 1;
+      const perPage = Math.min(options?.params?.per_page ?? 50, 50);
+      return [
+        { id: 39, count: allTasks.length, tasks: allTasks.slice((page - 1) * perPage, page * perPage) },
+        { id: 38, count: 1, tasks: page === 1 ? [{ id: 900 }] : [] },
+      ];
+    });
+    const service = { getAllTasks: jest.fn(), request } as unknown as TaskService;
+
+    applyTaskServiceCompatibility(service);
+    const buckets = await getBucketsForView(service, 13, 52);
+
+    expect(buckets.find((b) => b.id === 39)?.tasks).toHaveLength(54);
+    expect(buckets.find((b) => b.id === 38)?.tasks).toHaveLength(1);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it('enriches task bucket ids from view buckets', async () => {

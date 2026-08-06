@@ -119,6 +119,18 @@ function hasRequestMethod(service: unknown): service is TaskServiceWithRequest {
 }
 
 /**
+ * Vikunja clamps `per_page` to its configured maximum (50 by default) and
+ * paginates the tasks *inside each bucket* of a Kanban board read, reporting
+ * each bucket's true row count in `count`. Reading page 1 alone therefore
+ * truncates any column past the cap: every task beyond it looks like it sits
+ * in no bucket at all, which turns a move that worked into a "task is in
+ * bucket none" failure and blanks the Column of a task that is really there.
+ */
+const BOARD_PAGE_SIZE = 50;
+/** Safety stop: 40 pages is 2000 tasks in one column. */
+const BOARD_MAX_PAGES = 40;
+
+/**
  * Work around node-vikunja 0.4.0 using the removed /tasks/all endpoint.
  */
 export function applyTaskServiceCompatibility(service: unknown): void {
@@ -160,15 +172,57 @@ export function applyTaskServiceCompatibility(service: unknown): void {
     { task_id: taskId, bucket_id: bucketId, project_view_id: viewId },
   );
 
-  service.getBucketsForView = (
+  service.getBucketsForView = async (
     projectId: number,
     viewId: number,
-  ): Promise<TaskBucket[]> => service.request<TaskBucket[]>(
-    `/projects/${projectId}/views/${viewId}/tasks`,
-    'GET',
-    undefined,
-    { params: { page: 1, per_page: 500 } },
-  );
+  ): Promise<TaskBucket[]> => {
+    const merged = new Map<number, TaskBucket>();
+    const order: number[] = [];
+
+    for (let page = 1; page <= BOARD_MAX_PAGES; page++) {
+      const response = await service.request<TaskBucket[]>(
+        `/projects/${projectId}/views/${viewId}/tasks`,
+        'GET',
+        undefined,
+        { params: { page, per_page: BOARD_PAGE_SIZE } },
+      );
+      const pageBuckets = Array.isArray(response) ? response : [];
+
+      let added = 0;
+      for (const bucket of pageBuckets) {
+        let target = merged.get(bucket.id);
+        if (target === undefined) {
+          target = { ...bucket, tasks: [] };
+          merged.set(bucket.id, target);
+          order.push(bucket.id);
+        }
+        const tasks = target.tasks ?? [];
+        const seen = new Set(tasks.map((task) => task.id));
+        for (const task of bucket.tasks ?? []) {
+          if (task.id !== undefined && seen.has(task.id)) {
+            continue;
+          }
+          tasks.push(task);
+          added++;
+        }
+        target.tasks = tasks;
+      }
+
+      // A page that adds nothing means the board is exhausted (or the server
+      // ignores paging) — stop either way rather than loop.
+      if (added === 0) {
+        break;
+      }
+      const complete = Array.from(merged.values()).every(
+        (bucket) => bucket.count === undefined || (bucket.tasks ?? []).length >= bucket.count,
+      );
+      if (complete) {
+        break;
+      }
+    }
+
+    return order.map((id) => merged.get(id) as TaskBucket);
+  };
 
   service.getProjectViews = (
     projectId: number,
