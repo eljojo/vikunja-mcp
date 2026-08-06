@@ -19,7 +19,7 @@ import { transformApiError, handleFetchError, handleStatusCodeError } from '../.
 import { AUTH_ERROR_MESSAGES } from '../constants';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
-import { moveTaskToBucket } from '../../../client/applyTaskServiceCompatibility';
+import { getBucketsForView, moveTaskToBucket } from '../../../client/applyTaskServiceCompatibility';
 
 export interface UpdateTaskArgs {
   id?: number;
@@ -112,14 +112,15 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
           'projectId is required when the task response does not include a project',
         );
       }
-      const relation = await moveTaskToBucket(
+      await moveTaskToBucket(
         client.tasks,
         projectId,
         viewId,
         bucketId,
         args.id,
       );
-      movedBucketId = relation.bucket_id;
+      await confirmTaskIsInBucket(client, projectId, viewId, bucketId, args.id);
+      movedBucketId = bucketId;
     }
 
     // Fetch the complete updated task
@@ -133,13 +134,6 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
         `Task ${args.id} was not moved to project ${args.projectId}`,
       );
     }
-    if (bucketId !== undefined && completeTask.bucket_id !== bucketId) {
-      throw new MCPError(
-        ErrorCode.API_ERROR,
-        `Task ${args.id} was not moved to bucket ${bucketId}`,
-      );
-    }
-
     const response = createTaskResponse(
       'update-task',
       'Task updated successfully',
@@ -185,6 +179,44 @@ export async function updateTask(args: UpdateTaskArgs): Promise<{ content: Array
       throw handleStatusCodeError(error, 'update task', args.id, `Task with ID ${args.id} not found`);
     }
     throw transformApiError(error, 'Failed to update task');
+  }
+}
+
+/**
+ * Confirm a bucket move by reading the board back.
+ *
+ * The bucket-tasks endpoint echoes the bucket id it was handed, and a plain
+ * task GET always reports bucket_id 0 (Vikunja only fills it when the task is
+ * read through a view), so neither can tell us whether the task was seated.
+ * Checking either one against the requested id is a guard that cannot fail.
+ */
+async function confirmTaskIsInBucket(
+  client: VikunjaClient,
+  projectId: number,
+  viewId: number,
+  bucketId: number,
+  taskId: number,
+): Promise<void> {
+  let buckets;
+  try {
+    buckets = await getBucketsForView(client.tasks, projectId, viewId);
+  } catch (error) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId} was sent to bucket ${bucketId}, but the move could not be verified: ` +
+        `reading view ${viewId} failed (${error instanceof Error ? error.message : String(error)}). ` +
+        'Re-read the board before treating the move as done.',
+    );
+  }
+
+  const seated = buckets.some(
+    (bucket) => bucket.id === bucketId && (bucket.tasks ?? []).some((task) => task.id === taskId),
+  );
+  if (!seated) {
+    throw new MCPError(
+      ErrorCode.API_ERROR,
+      `Task ${taskId} was not moved to bucket ${bucketId}`,
+    );
   }
 }
 

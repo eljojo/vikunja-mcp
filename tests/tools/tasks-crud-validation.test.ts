@@ -42,6 +42,7 @@ describe('Tasks CRUD - Validation Coverage', () => {
         bulkAssignUsersToTask: jest.fn(),
         removeUserFromTask: jest.fn(),
         moveTaskToBucket: jest.fn(),
+        getBucketsForView: jest.fn(),
       },
     } as any;
 
@@ -296,6 +297,9 @@ describe('Tasks CRUD - Validation Coverage', () => {
         task_id: 1,
         project_view_id: 52,
       });
+      mockClient.tasks.getBucketsForView.mockResolvedValue([
+        { id: 39, tasks: [{ id: 1 }] },
+      ]);
 
       const result = await updateTask({
         id: 1,
@@ -332,6 +336,9 @@ describe('Tasks CRUD - Validation Coverage', () => {
         task_id: 1,
         project_view_id: 52,
       });
+      mockClient.tasks.getBucketsForView.mockResolvedValue([
+        { id: 40, tasks: [{ id: 1 }] },
+      ]);
 
       await updateTask({ id: 1, bucket_id: 40, view_id: 52 });
 
