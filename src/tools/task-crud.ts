@@ -91,11 +91,27 @@ async function listTasks(
     // Type the filtering metadata properly
     const filteringMetadata = metadata;
 
+    // The window is one page of the match set; say both numbers rather than
+    // reporting the page as if it were the whole answer.
+    const total = filteringMetadata.pagination?.total;
+    const found =
+      total !== undefined && total > tasks.length
+        ? `Found ${tasks.length} of ${total} tasks${filteringMessage}`
+        : `Found ${tasks.length} tasks${filteringMessage}`;
+
     const response = createSuccessResponse(
       'list-tasks',
-      `Found ${tasks.length} tasks${filteringMessage}`,
-      // Show the done column unless the query already pins done state.
-      { tasks, taskTableOptions: { showDone: args.done === undefined } },
+      found,
+      {
+        tasks,
+        taskTableOptions: {
+          // Show the done column unless the query already pins done state.
+          showDone: args.done === undefined,
+          // Descriptions are the bulk of a list; verbose brings them back.
+          showNotes: Boolean(args.verbose),
+          ...(args.fields !== undefined && { fields: args.fields }),
+        },
+      },
       {
         count: tasks.length,
         filteringMethod: filteringMetadata.serverSideFilteringUsed ? 'server-side' :
@@ -135,7 +151,13 @@ export function registerTaskCrudTool(
 ): void {
   server.tool(
     'vikunja_task_crud',
-    'Manage individual tasks: create, get, update, delete, list. A single-project list shows a comment count per card; pass includeComments:true for a deep-read that inlines every task\'s full comment bodies. On get, pass raw:true for a verbatim JSON dump of the stored fields (round-trippable — no HTML-strip or newline-flatten).',
+    'Manage individual tasks: create, get, update, delete, list. ' +
+      'list is a cheap board read: one compact row per task (id, title, due, and — for a single-project list — its kanban column and 💬 comment count) ' +
+      'with NO description bodies. Pass verbose:true for descriptions, or fields:["id","title","column"] to pin the columns. ' +
+      'page/perPage are honoured, including inside a single bucketId; a narrowed list reports the page against the true match total. ' +
+      'On get, pass raw:true for a verbatim JSON dump of the stored fields (round-trippable — no HTML-strip or newline-flatten). ' +
+      'On update, editMode:"patch" with findText/replaceText rewrites part of a description without re-sending it (it refuses rather than silently matching nothing), ' +
+      'dueDate:"" clears the due date, and done:true also moves the card to the board\'s done column.',
     {
       operation: z.enum(['create', 'get', 'update', 'delete', 'list']),
       // Task creation/update fields
@@ -146,7 +168,8 @@ export function registerTaskCrudTool(
       bucket_id: z.number().int().positive().optional(),
       viewId: z.number().int().positive().optional(),
       view_id: z.number().int().positive().optional(),
-      dueDate: z.string().optional(),
+      // "" or null clears the due date (Vikunja's null sentinel is written for you).
+      dueDate: z.string().nullable().optional(),
       priority: z.number().min(0).max(5).optional(),
       labels: z.array(z.number()).optional(),
       assignees: z.array(z.number()).optional(),
@@ -172,6 +195,24 @@ export function registerTaskCrudTool(
       // Deep-read: inline each task's full comment bodies. Single-project lists
       // only; a plain single-project list already shows a per-card comment count.
       includeComments: z.boolean().optional(),
+      // list: pin the table's columns instead of showing whichever are populated.
+      fields: z
+        .array(
+          z.enum(['id', 'title', 'done', 'column', 'due', 'priority', 'labels', 'updated', 'comments', 'notes']),
+        )
+        .optional(),
+      // list: bring back the Notes (description) column, which is off by default.
+      verbose: z.boolean().optional(),
+      // update: rewrite part of the description instead of re-sending the whole body.
+      editMode: z.enum(['replace', 'patch', 'append']).optional(),
+      findText: z.string().optional(),
+      replaceText: z.string().optional(),
+      replaceAll: z.boolean().optional(),
+      // update: echo the pre-update field values back (off by default — the
+      // caller already knows what it sent, and a description echo is expensive).
+      returnPrevious: z.boolean().optional(),
+      // update: with done:true, also move the card to the board's done column.
+      moveToDoneBucket: z.boolean().optional(),
       // Session ID for AORP response tracking
       sessionId: z.string().optional(),
     },

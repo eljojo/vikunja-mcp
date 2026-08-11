@@ -187,7 +187,7 @@ describe('Tasks Tool', () => {
     // Get the tasks tool handler
     expect(mockServer.tool).toHaveBeenCalledWith(
       'vikunja_tasks',
-      'Manage tasks with comprehensive operations (create, update, delete, list, assign, attach files, comment, bulk operations)',
+      expect.stringContaining('Manage tasks with comprehensive operations'),
       expect.any(Object),
       expect.any(Function),
     );
@@ -266,6 +266,8 @@ describe('Tasks Tool', () => {
         search: 'urgent',
       });
 
+      // The caller's page/perPage are NOT forwarded: the server pages over the
+      // unnarrowed set, so its page 2 is not page 2 of the filtered result.
       expect(mockClient.tasks.getProjectTasks).toHaveBeenCalledWith(1, {
         page: 1,
         per_page: 50,
@@ -277,7 +279,34 @@ describe('Tasks Tool', () => {
       const parsed = parseMarkdown(markdown);
             const aorpStatus = parsed.getAorpStatus();
       expect(aorpStatus.type).toBe('success');
-      expect(markdown).toContain('Found 1 tasks');
+      // One task matches the filter, so page 2 of a 25-row window is empty —
+      // and says so against the real total instead of re-serving page 1.
+      expect(markdown).toContain('Found 0 of 1 tasks');
+    });
+
+    it('windows a filtered list by page/perPage instead of returning the whole match set', async () => {
+      const many: Task[] = Array.from({ length: 12 }, (_, i) => ({
+        ...mockTask,
+        id: 100 + i,
+        title: `Task ${100 + i}`,
+        priority: 5,
+      }));
+      mockClient.tasks.getProjectTasks.mockResolvedValue(many);
+
+      const page1 = await callTool('list', { projectId: 1, perPage: 5, filter: 'priority >= 5' });
+      const page1Text = page1.content[0].text;
+      expect(page1Text).toContain('Found 5 of 12 tasks');
+      expect(page1Text).toContain('Task 100');
+      expect(page1Text).not.toContain('Task 105');
+
+      const page2 = await callTool('list', { projectId: 1, page: 2, perPage: 5, filter: 'priority >= 5' });
+      const page2Text = page2.content[0].text;
+      expect(page2Text).toContain('Found 5 of 12 tasks');
+      expect(page2Text).toContain('Task 105');
+      expect(page2Text).not.toContain('Task 100');
+
+      const page3 = await callTool('list', { projectId: 1, page: 3, perPage: 5, filter: 'priority >= 5' });
+      expect(page3.content[0].text).toContain('Found 2 of 12 tasks');
     });
 
     it('should handle multiple sort fields', async () => {
@@ -2752,7 +2781,7 @@ describe('Tasks Tool', () => {
     it('should register the vikunja_tasks tool', () => {
       expect(mockServer.tool).toHaveBeenCalledWith(
         'vikunja_tasks',
-        'Manage tasks with comprehensive operations (create, update, delete, list, assign, attach files, comment, bulk operations)',
+        expect.stringContaining('Manage tasks with comprehensive operations'),
         expect.any(Object),
         expect.any(Function),
       );

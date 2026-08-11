@@ -41,13 +41,63 @@ describe('simple-response - Task Formatting', () => {
       expect(result).toContain('Due');
       expect(result).toContain('Pri');
       expect(result).toContain('Labels');
-      expect(result).toContain('Notes');
+      // Descriptions are the bulk of a list's payload, so Notes is opt-in
+      expect(result).not.toContain('Notes');
+      expect(result).not.toContain('Users cannot login');
       // Cell values
       expect(result).toContain('Fix critical bug');
       expect(result).toContain('In Progress');
       expect(result).toContain('2025-01-30');
       expect(result).toContain('urgent');
+    });
+
+    it('brings the description back with showNotes', () => {
+      const task: Task = {
+        id: 1,
+        project_id: 5,
+        title: 'Fix critical bug',
+        description: 'Users cannot login',
+        repeat_after: 0,
+      };
+
+      const result = formatSuccessMessage(
+        'list-tasks',
+        'Found 1 task',
+        { tasks: [task], taskTableOptions: { showNotes: true } },
+        { count: 1 },
+      );
+
+      expect(result).toContain('Notes');
       expect(result).toContain('Users cannot login');
+    });
+
+    it('renders exactly the requested fields when `fields` pins the projection', () => {
+      const task: Task = {
+        id: 1,
+        project_id: 5,
+        title: 'Fix critical bug',
+        bucket_title: 'In Progress',
+        description: 'Users cannot login',
+        priority: 5,
+        due_date: '2025-01-30T17:00:00Z',
+        labels: [{ id: 1, title: 'urgent', hex_color: '#ff0000' }],
+        repeat_after: 0,
+      };
+
+      const result = formatSuccessMessage(
+        'list-tasks',
+        'Found 1 task',
+        { tasks: [task], taskTableOptions: { fields: ['id', 'title', 'bucket'] } },
+        { count: 1 },
+      );
+
+      // `bucket` is accepted as an alias for the Column key
+      expect(result).toContain('| ID | Task | Column |');
+      expect(result).toContain('In Progress');
+      // Populated but not asked for
+      expect(result).not.toContain('Pri');
+      expect(result).not.toContain('Labels');
+      expect(result).not.toContain('Notes');
     });
 
     it('omits columns for unpopulated fields', () => {
@@ -67,6 +117,40 @@ describe('simple-response - Task Formatting', () => {
       expect(result).not.toContain('Due');
       expect(result).not.toContain('Pri');
       expect(result).not.toContain('Labels');
+    });
+
+    it('escapes a label title so a pipe cannot shred the row', () => {
+      const task: Task = {
+        id: 1,
+        project_id: 5,
+        title: 'Fix bug',
+        labels: [{ id: 1, title: 'work | home', hex_color: '#fff' }],
+        repeat_after: 0,
+      };
+
+      const result = formatSuccessMessage('list-tasks', 'Found 1 task', { tasks: [task] }, { count: 1 });
+
+      expect(result).toContain('work \\| home');
+    });
+
+    it('offers a next page only when there is one', () => {
+      const tasks: Task[] = [{ id: 1, project_id: 5, title: 'Last one', repeat_after: 0 }];
+
+      const middle = formatSuccessMessage('list-tasks', 'x', { tasks }, {
+        count: 1,
+        pagination: { page: 1, perPage: 1, returned: 1, hasMore: true, total: 3 },
+      });
+      expect(middle).toContain('Pass `page:2` for the next.');
+
+      // A caller follows the instruction it is given, so the last page must not
+      // point at a page that returns nothing.
+      const last = formatSuccessMessage('list-tasks', 'x', { tasks }, {
+        count: 1,
+        pagination: { page: 3, perPage: 1, returned: 1, hasMore: false, total: 3 },
+      });
+      expect(last).toContain('Page 3 of 3');
+      expect(last).toContain('This is the last page.');
+      expect(last).not.toContain('page:4');
     });
 
     it('shows a done column only when done states are mixed', () => {
@@ -95,7 +179,7 @@ describe('simple-response - Task Formatting', () => {
       expect(result).toContain('📁 Project 5 — 2 task(s)');
       expect(result).toContain('Task 1');
       expect(result).toContain('Task 2');
-      expect(result).toContain('First task');
+      expect(result).not.toContain('First task');
       expect(result).toContain('Pri');
     });
 

@@ -56,6 +56,13 @@ export interface FilteringMetadata {
    * path fetches the whole set, so nothing is left beyond it).
    */
   hasMore?: boolean;
+  /**
+   * The strategy returned the COMPLETE match set rather than one page, because
+   * the caller narrows client-side (filter / done / bucket) and that narrowing
+   * has to see everything. The caller must window the result itself — nothing
+   * downstream of here has already applied `page`/`perPage`.
+   */
+  loadedAll?: boolean;
 }
 
 /**

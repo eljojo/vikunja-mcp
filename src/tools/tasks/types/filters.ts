@@ -56,6 +56,11 @@ export interface PaginationInfo {
   returned: number;
   /** Whether more results likely exist beyond this page */
   hasMore: boolean;
+  /**
+   * Size of the whole narrowed match set. Only the full-load path (filter /
+   * done / bucket) ever sees it; a plain browse never reads past its window.
+   */
+  total?: number;
 }
 
 /**
@@ -91,6 +96,10 @@ export interface TaskListingArgs extends FilteringArgs {
   showUpdated?: boolean;
   /** Deep-read: inline each task's full comment bodies (single-project lists only) */
   includeComments?: boolean;
+  /** Pin the rendered table's columns instead of showing whichever are populated */
+  fields?: string[];
+  /** Bring back the Notes (description) column, which a list omits by default */
+  verbose?: boolean;
 }
 
 /**

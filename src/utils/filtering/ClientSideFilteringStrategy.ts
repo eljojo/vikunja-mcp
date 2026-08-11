@@ -156,6 +156,9 @@ export class ClientSideFilteringStrategy implements TaskFilteringStrategy {
         clientSideFiltering: Boolean(filterExpression),
         filteringNote: 'Client-side filtering applied (server-side disabled in development)',
         ...(browseHasMore !== undefined && { hasMore: browseHasMore }),
+        // The full-load path returns every match, unwindowed — the caller has to
+        // apply (page, perPage) itself, after its own narrowing has run.
+        ...(loadAll ? { loadedAll: true } : {}),
       }
     };
   }

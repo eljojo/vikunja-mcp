@@ -81,6 +81,7 @@ export const FilterExecutor = {
         serverSideFilteringUsed,
         serverSideFilteringAttempted,
         hasMore: browseHasMore,
+        loadedAll,
       } = filteringResult.metadata;
 
       // Additional memory protection: validate actual loaded task count
@@ -133,24 +134,45 @@ export const FilterExecutor = {
         filteringResult.metadata.filteringNote
       );
 
-      // Attach pagination so the response can hint whether more results exist.
-      // A plain browse pages internally to fill perPage and reports hasMore
-      // directly (the server's 50-cap means `returned >= perPage` can't be
-      // trusted). Otherwise fall back to that heuristic: a full page implies a
-      // possible next page; the full-load path fetched everything, so it's false.
-      const perPage = params.per_page ?? processedTasks.length;
-      const page = params.page ?? 1;
+      // Window the result and report pagination.
+      //
+      // A plain browse already holds exactly its (page, perPage) window and
+      // reports hasMore directly — the server's 50-cap means `returned >=
+      // perPage` can't be trusted. The full-load path holds EVERYTHING, because
+      // the client-side narrowing above has to see the whole set; it is the one
+      // that still needs windowing, and here is the only point where the set is
+      // both complete and narrowed. Slicing before the caller's per-task
+      // enrichment is also what keeps a page costing one page. Never slice the
+      // browse path — it would window twice and page 2 would come back empty.
+      let pageTasks = processedTasks;
+      const page = FilterExecutor.resolvePage(args);
+      let perPage: number;
+      let hasMore: boolean;
+      let total: number | undefined;
+
+      if (loadedAll) {
+        total = processedTasks.length;
+        perPage = FilterExecutor.resolvePerPage(args);
+        const start = (page - 1) * perPage;
+        pageTasks = processedTasks.slice(start, start + perPage);
+        hasMore = start + pageTasks.length < total;
+      } else {
+        perPage = params.per_page ?? processedTasks.length;
+        hasMore = browseHasMore ?? (perPage > 0 && processedTasks.length >= perPage);
+      }
+
       filteringMetadata.pagination = {
         page,
         perPage,
-        returned: processedTasks.length,
-        hasMore: browseHasMore ?? (perPage > 0 && processedTasks.length >= perPage),
+        returned: pageTasks.length,
+        hasMore,
+        ...(total !== undefined && { total }),
       };
 
       // Build return object, only including defined properties to satisfy exactOptionalPropertyTypes
       const result: TaskFilterExecutionResult = {
         success: true,
-        tasks: processedTasks,
+        tasks: pageTasks,
         metadata: filteringMetadata,
       };
 
@@ -274,6 +296,23 @@ export const FilterExecutor = {
     }
 
     return params;
+  },
+
+  /**
+   * The caller's window, taken from `args` rather than `params`: `params` is
+   * the transport shape (forced to the server's 50-row cap while paging) and
+   * says nothing about how many rows the caller actually asked to see.
+   */
+  resolvePage(args: TaskListingArgs): number {
+    const page = args.page;
+    return page !== undefined && Number.isFinite(page) && page >= 1 ? Math.floor(page) : 1;
+  },
+
+  resolvePerPage(args: TaskListingArgs): number {
+    const perPage = args.perPage;
+    return perPage !== undefined && Number.isFinite(perPage) && perPage >= 1
+      ? Math.floor(perPage)
+      : DEFAULT_LIST_PAGE_SIZE;
   },
 
   resolveBucketId(args: TaskListingArgs): number | undefined {

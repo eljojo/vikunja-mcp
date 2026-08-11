@@ -69,10 +69,22 @@ async function listTasks(
     }
 
     const taskCount = filteringResult.tasks?.length || 0;
+    // A narrowed read returns one page; report the page and the match set, not
+    // the page as if it were the whole answer.
+    const total = filteringResult.metadata?.pagination?.total;
     const response = createTaskResponse(
       'list-tasks',
-      `Found ${taskCount} tasks${filteringMessage}`,
-      { tasks: filteringResult.tasks || [] },
+      total !== undefined && total > taskCount
+        ? `Found ${taskCount} of ${total} tasks${filteringMessage}`
+        : `Found ${taskCount} tasks${filteringMessage}`,
+      {
+        tasks: filteringResult.tasks || [],
+        taskTableOptions: {
+          // Descriptions are off by default here too; verbose/fields opt back in.
+          showNotes: Boolean(args.verbose),
+          ...(args.fields !== undefined && { fields: args.fields }),
+        },
+      },
       {
         timestamp: new Date().toISOString(),
         count: taskCount,
@@ -130,7 +142,8 @@ export function registerTasksTool(
 ): void {
   server.tool(
     'vikunja_tasks',
-    'Manage tasks with comprehensive operations (create, update, delete, list, assign, attach files, comment, bulk operations)',
+    'Manage tasks with comprehensive operations (create, update, delete, list, assign, attach files, comment, bulk operations). ' +
+      'list omits description bodies by default — pass verbose:true or fields:[...] for them. Prefer vikunja_task_crud for plain task work.',
     {
       subcommand: z.enum([
         'create',
@@ -164,7 +177,8 @@ export function registerTasksTool(
       bucket_id: z.number().int().positive().optional(),
       viewId: z.number().int().positive().optional(),
       view_id: z.number().int().positive().optional(),
-      dueDate: z.string().optional(),
+      // "" or null clears the due date (Vikunja's null sentinel is written for you).
+      dueDate: z.string().nullable().optional(),
       priority: z.number().min(0).max(5).optional(),
       labels: z.array(z.number()).optional(),
       assignees: z.array(z.number()).optional(),
@@ -182,6 +196,22 @@ export function registerTasksTool(
       // List specific filters
       allProjects: z.boolean().optional(),
       done: z.boolean().optional(),
+      // list: the table's columns. Descriptions are off by default (they are
+      // what makes a board read expensive); verbose or fields brings them back.
+      fields: z
+        .array(
+          z.enum(['id', 'title', 'done', 'column', 'due', 'priority', 'labels', 'updated', 'comments', 'notes']),
+        )
+        .optional(),
+      verbose: z.boolean().optional(),
+      // update: mirrors vikunja_task_crud — both route into the same updateTask,
+      // so a param declared on only one of them would silently do nothing here.
+      editMode: z.enum(['replace', 'patch', 'append']).optional(),
+      findText: z.string().optional(),
+      replaceText: z.string().optional(),
+      replaceAll: z.boolean().optional(),
+      returnPrevious: z.boolean().optional(),
+      moveToDoneBucket: z.boolean().optional(),
       // Comment fields
       comment: z.string().optional(),
       commentId: z.number().optional(),
