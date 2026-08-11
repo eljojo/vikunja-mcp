@@ -32,7 +32,7 @@ npm run test:mcp        # integration test against a real Vikunja (scripts/test-
 npm run format          # prettier over src/ and tests/
 
 # Targeted tests (prefer these while working)
-npx jest tests/tools/labels.test.ts        # one file
+npx jest --testPathPatterns labels          # one file (jest 30: a bare path arg hangs)
 npx jest -t "should create task"           # one test by name
 ```
 
@@ -71,16 +71,16 @@ Errors flow through `src/utils/error-handler.ts` and surface as `MCPError` with 
 | Tool | Ops | Notes |
 |---|---|---|
 | `vikunja_auth` | connect, status, refresh, disconnect | always registered |
-| `vikunja_task_crud` | create, get, update, delete, list | **preferred** task tool; `list` resolves project + kanban column names |
+| `vikunja_task_crud` | create, get, update, delete, list | **preferred** task tool. `list` is the cheap read: a compact row per task (no description bodies) — `verbose`/`fields` bring columns back, and `page`/`perPage` window the result even inside one `bucketId`. `update` takes `editMode: patch\|append` for in-place description edits, clears `dueDate` with `""`, and moves a card to the done column on `done:true` |
 | `vikunja_tasks` | list, … | older comprehensive tool with a heavier formatter — prefer `task_crud` |
 | `vikunja_task_bulk` | bulk-create, bulk-update, bulk-delete | one API call per task (Vikunja has no batch endpoint) |
 | `vikunja_task_assignees` | assign, unassign, list-assignees | |
-| `vikunja_task_labels` | apply-label, remove-label, list-labels | per-task |
-| `vikunja_task_comments` | comment | |
+| `vikunja_task_labels` | apply-label, remove-label, list-labels | per-task; `apply`/`remove`/`list` accepted as aliases |
+| `vikunja_task_comments` | comment, list, update | `create` aliases `comment`; the task is `id`, with `taskId` accepted |
 | `vikunja_task_reminders` | add-reminder, remove-reminder, list-reminders | |
 | `vikunja_task_relations` | relate, unrelate, relations | |
-| `vikunja_projects` | list, get, create, update, delete, archive/unarchive, tree/children/breadcrumb, move, shares | |
-| `vikunja_kanban` | list-views, list-buckets, create/update/delete-bucket, move-task, bulk-move, set-view-config, apply-template | `viewId` auto-resolves; see filtering notes |
+| `vikunja_projects` | list, get, create, update, delete, archive/unarchive, tree/children/breadcrumb, move, shares | takes `operation`; `subcommand` kept as an alias |
+| `vikunja_kanban` | list-views, list-buckets, create/update/delete/reorder-buckets, move-task, bulk-move, set-task-position, set-view-config, apply-template | `viewId` auto-resolves; `list-buckets` + `includeTasks` is the cheap board read; see filtering notes |
 | `vikunja_labels` | list, get, create, update, delete | |
 | `vikunja_filters` | list, get, create, update, delete, build, validate | see **Filtering** |
 | `vikunja_teams` | list, get, create, update, delete, members | node-vikunja team support is partial |
