@@ -17,7 +17,8 @@ import { RETRY_CONFIG } from '../../../utils/retry';
 import { transformApiError, handleFetchError } from '../../../utils/error-handler';
 import { sanitizeUserText } from '../../../utils/validation';
 import { AUTH_ERROR_MESSAGES } from '../constants';
-import { validateDateString, expandDateOnly, validateId, convertRepeatConfiguration } from '../validation';
+import { validateDateString, expandDateOnly, isDateSet, validateId, convertRepeatConfiguration } from '../validation';
+import { htmlToPlainText } from '../../../utils/html-text';
 import { createTaskResponse } from './TaskResponseFormatter';
 import { formatAorpAsMarkdown } from '../../../utils/response-factory';
 import { getTaskWithRelationships } from '../relationship-verification';
@@ -26,7 +27,8 @@ export interface CreateTaskArgs {
   projectId?: number;
   title?: string;
   description?: string;
-  dueDate?: string;
+  /** `""` or `null` means "no due date" (the same clear `update` accepts). */
+  dueDate?: string | null;
   priority?: number;
   labels?: number[];
   assignees?: number[];
@@ -74,7 +76,7 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
     const sanitizedDescription = args.description !== undefined ? sanitizeUserText(args.description) : undefined;
 
     // Validate optional date fields
-    if (args.dueDate) {
+    if (isDateSet(args.dueDate)) {
       validateDateString(args.dueDate, 'dueDate');
     }
 
@@ -96,7 +98,10 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
 
     // Add optional fields with sanitized values
     if (sanitizedDescription !== undefined) newTask.description = sanitizedDescription;
-    if (args.dueDate !== undefined) newTask.due_date = expandDateOnly(args.dueDate);
+    // A cleared due date on create is simply no due date — don't send the sentinel.
+    if (isDateSet(args.dueDate)) {
+      newTask.due_date = expandDateOnly(args.dueDate);
+    }
     if (args.priority !== undefined) newTask.priority = args.priority;
 
     // Handle repeat configuration
@@ -169,6 +174,16 @@ export async function createTask(args: CreateTaskArgs): Promise<{ content: Array
       {
         timestamp: new Date().toISOString(),
         ...(completeTask.id !== undefined && { taskId: completeTask.id }),
+        // The rendered read strips HTML, so a caller cannot tell our display
+        // formatting from Vikunja rewriting what it stored. Compare the text we
+        // sent against the server's own echo and say so when they differ.
+        ...(sanitizedDescription !== undefined &&
+          createdTask.description !== sanitizedDescription &&
+          htmlToPlainText(createdTask.description ?? '') !== htmlToPlainText(sanitizedDescription) && {
+            note:
+              'Vikunja stored a description whose text differs from what was sent — content was dropped or rewritten on save. ' +
+              'Read it back with `get` and raw:true to see exactly what is stored.',
+          }),
         projectId: args.projectId,
         labelsAdded: args.labels ? args.labels.length > 0 : false,
         assigneesAdded: args.assignees ? args.assignees.length > 0 : false,

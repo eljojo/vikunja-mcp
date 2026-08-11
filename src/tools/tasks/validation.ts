@@ -31,6 +31,30 @@ export function expandDateOnly(date: string): string {
 }
 
 /**
+ * Vikunja stores "no date" as this sentinel rather than null, and rejects an
+ * empty string outright ("Invalid model provided"). Everything that reads dates
+ * back already treats a `0001-01-01` prefix as unset.
+ */
+export const NULL_DATE_SENTINEL = '0001-01-01T00:00:00Z';
+
+/**
+ * True when a real date was given. `""` and `null` are the caller asking to
+ * CLEAR the date, which is a different thing from omitting the argument
+ * (omitting means "leave it alone").
+ */
+export function isDateSet(date: string | null | undefined): date is string {
+  return date !== undefined && date !== null && date !== '';
+}
+
+/**
+ * Resolve a caller's due date to what Vikunja stores: the null sentinel for a
+ * clear, a full timestamp for a date-only value, otherwise the value as given.
+ */
+export function resolveDueDate(date: string | null): string {
+  return isDateSet(date) ? expandDateOnly(date) : NULL_DATE_SENTINEL;
+}
+
+/**
  * Validates that an ID is a positive integer
  * @deprecated Use validateSharedId from '../../../utils/validation' instead
  */
