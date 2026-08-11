@@ -296,8 +296,15 @@ function parseField(state: ParseState): FilterField | null {
 
   const suggestion = suggestField(identifier);
   const hint = suggestion ? ` Did you mean "${suggestion}"?` : '';
+  // A kanban column is the thing people most often try to filter on, and it is
+  // not a filter field at all — it lives as an argument on a different tool.
+  // Without this the error lists the legal fields and leaves the caller to
+  // guess which of three tools can answer the question.
+  const bucketHint = /^bucket(_?id)?$/i.test(identifier)
+    ? ' A kanban column is not a filter field: use `vikunja_task_crud list` with `bucketId` (plus `viewId`) instead.'
+    : '';
   throw new Error(
-    `Unknown filter field "${identifier}".${hint} ` +
+    `Unknown filter field "${identifier}".${hint}${bucketHint} ` +
       `Available fields: ${FILTER_FIELDS.join(', ')}`,
   );
 }

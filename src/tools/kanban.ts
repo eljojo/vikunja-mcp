@@ -219,6 +219,11 @@ async function deleteBucketSafely(
   return out;
 }
 
+/** Escape a value for a markdown table cell (titles carry pipes and newlines). */
+function cell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\s*\n+\s*/g, ' / ').trim();
+}
+
 function formatBucketTable(buckets: TaskBucket[], view: ProjectViewLite, counts: Map<number, number>): string {
   const rows = buckets.map((b) => {
     const flags = [
@@ -227,13 +232,45 @@ function formatBucketTable(buckets: TaskBucket[], view: ProjectViewLite, counts:
     ].filter(Boolean).join(', ');
     const count = counts.get(b.id);
     const limit = b.limit && b.limit > 0 ? String(b.limit) : '';
-    return `| ${b.id} | ${b.title ?? ''} | ${count ?? ''} | ${limit} | ${flags} |`;
+    return `| ${b.id} | ${cell(b.title ?? '')} | ${count ?? ''} | ${limit} | ${flags} |`;
   });
   return [
     '| Bucket ID | Column | Tasks | Limit | Role |',
     '| --- | --- | --- | --- | --- |',
     ...rows,
   ].join('\n');
+}
+
+/**
+ * One column's cards as id + title — the cheap read. No descriptions, no dates:
+ * this is the call you make to see what is where, not to read the cards.
+ *
+ * Three numbers can disagree and all three are reported when they do: what the
+ * server says the column holds (`count`), what the paging board read actually
+ * retrieved, and what is rendered here.
+ */
+function formatBucketTasks(bucket: TaskBucket, cap: number): string {
+  const tasks = (bucket.tasks ?? []).filter((t) => t.id !== undefined);
+  const reported = bucket.count ?? tasks.length;
+  const shown = tasks.slice(0, cap);
+
+  const lines = [
+    `### ${cell(bucket.title ?? '')} (bucket ${bucket.id}) — ${reported} card(s)`,
+    '',
+    '| ID | Task |',
+    '| --- | --- |',
+    ...shown.map((t) => `| ${t.id ?? ''} | ${cell(t.title ?? '')} |`),
+  ];
+  if (tasks.length < reported) {
+    lines.push('', `_Board read returned ${tasks.length} of ${reported} — the server stopped paging early._`);
+  }
+  if (shown.length < tasks.length) {
+    lines.push(
+      '',
+      `_Showing first ${shown.length} of ${tasks.length}. Pass bucketId and a higher taskLimit for the rest._`,
+    );
+  }
+  return lines.join('\n');
 }
 
 export function registerKanbanTool(
@@ -243,16 +280,19 @@ export function registerKanbanTool(
 ): void {
   server.tool(
     'vikunja_kanban',
-    'Manage a project Kanban board: list views, list/create/update/delete columns (buckets), ' +
+    'Manage a project Kanban board: list views, list/create/update/delete/reorder columns (buckets), ' +
       'move tasks between columns, set the default/done column, and apply a column template. ' +
-      'viewId auto-resolves to the project Kanban view when omitted. Destructive ops relocate ' +
-      'tasks before deleting and accept dryRun to preview.',
+      'list-buckets with includeTasks:true is the cheap board read — every column with its cards as id + title, ' +
+      'no descriptions, in one call (add bucketId to read a single column). reorder-buckets sets the whole ' +
+      'column order from one list of bucket ids. viewId auto-resolves to the project Kanban view when omitted. ' +
+      'Destructive ops relocate tasks before deleting and accept dryRun to preview.',
     {
       operation: z.enum([
         'list-views',
         'list-buckets',
         'create-bucket',
         'update-bucket',
+        'reorder-buckets',
         'delete-bucket',
         'move-task',
         'bulk-move',
@@ -266,6 +306,12 @@ export function registerKanbanTool(
       intoBucketId: z.number().int().positive().optional(),
       taskId: z.number().int().positive().optional(),
       taskIds: z.array(z.number().int().positive()).optional(),
+      // list-buckets: also list each column's cards (id + title only).
+      includeTasks: z.boolean().optional(),
+      // list-buckets + includeTasks: how many cards to render per column.
+      taskLimit: z.number().int().min(1).optional(),
+      // reorder-buckets: the complete column order, left to right.
+      bucketIds: z.array(z.number().int().positive()).min(1).optional(),
       title: z.string().min(1).optional(),
       position: z.number().optional(),
       limit: z.number().int().min(0).optional(),
@@ -292,7 +338,7 @@ export function registerKanbanTool(
         switch (args.operation) {
           case 'list-views': {
             const views = (await getProjectViews(service, projectId)) ?? [];
-            const rows = views.map((v) => `| ${v.id} | ${v.title} | ${v.view_kind} |`).join('\n');
+            const rows = views.map((v) => `| ${v.id} | ${cell(v.title ?? '')} | ${cell(v.view_kind ?? '')} |`).join('\n');
             return text(
               `## Views for project ${projectId}\n\n| View ID | Title | Kind |\n| --- | --- | --- |\n${rows}\n`,
             );
@@ -306,9 +352,39 @@ export function registerKanbanTool(
               bucketsWithTasks(service, projectId, viewId),
             ]);
             const counts = new Map(withTasks.map((b) => [b.id, taskIdsOf(b).length]));
-            return text(
-              `## Kanban columns — project ${projectId}, view ${viewId}\n\n${formatBucketTable(buckets, view, counts)}\n`,
-            );
+            const table = `## Kanban columns — project ${projectId}, view ${viewId}\n\n${formatBucketTable(buckets, view, counts)}\n`;
+            if (!args.includeTasks) {
+              // Dropping these silently reads as "that column is empty".
+              const ignored = [
+                args.bucketId !== undefined ? 'bucketId' : '',
+                args.taskLimit !== undefined ? 'taskLimit' : '',
+              ].filter(Boolean);
+              return text(
+                table +
+                  (ignored.length > 0
+                    ? `\n_${ignored.join(' and ')} only apply with includeTasks:true — pass it to list the cards._\n`
+                    : ''),
+              );
+            }
+
+            // The board read already happened above, so listing the cards costs
+            // no extra request — only render size, which is what taskLimit caps.
+            const byId = new Map(withTasks.map((b) => [b.id, b]));
+            let toExpand: TaskBucket[];
+            if (args.bucketId !== undefined) {
+              const one = byId.get(args.bucketId);
+              if (!one) {
+                throw new MCPError(ErrorCode.NOT_FOUND, `Bucket ${args.bucketId} not found in view ${viewId}`);
+              }
+              toExpand = [one];
+            } else {
+              // Follow the board's own left-to-right column order.
+              toExpand = buckets.map((b) => byId.get(b.id)).filter((b): b is TaskBucket => b !== undefined);
+            }
+            // A whole board multiplies the cap by its column count; one named
+            // column does not, so it may be read deeper by default.
+            const cap = args.taskLimit ?? (args.bucketId === undefined ? 20 : 100);
+            return text(`${table}\n${toExpand.map((b) => formatBucketTasks(b, cap)).join('\n\n')}\n`);
           }
 
           case 'create-bucket': {
@@ -342,6 +418,95 @@ export function registerKanbanTool(
             });
             await updateBucket(service, projectId, viewId, args.bucketId, merged);
             return text(`Updated column ${args.bucketId} in project ${projectId} → ${JSON.stringify(merged)}`);
+          }
+
+          case 'reorder-buckets': {
+            // Vikunja has no batch position endpoint, so this is still N writes
+            // — but they are validated as a set first, so a rejected order
+            // writes nothing, and a failure mid-run reports the order the board
+            // actually ended up in rather than the one that was asked for.
+            const order = args.bucketIds;
+            if (!order || order.length === 0) {
+              throw new MCPError(
+                ErrorCode.VALIDATION_ERROR,
+                'bucketIds (the complete column order, left to right) is required for reorder-buckets',
+              );
+            }
+            const viewId = args.viewId ?? (await resolveKanbanViewId(service, projectId));
+            const existing = await orderedBuckets(service, projectId, viewId);
+            const existingIds = existing.map((b) => b.id);
+
+            const duplicates = order.filter((id, i) => order.indexOf(id) !== i);
+            if (duplicates.length > 0) {
+              throw new MCPError(
+                ErrorCode.VALIDATION_ERROR,
+                `bucketIds lists ${[...new Set(duplicates)].join(', ')} more than once. Nothing was changed.`,
+              );
+            }
+            const unknown = order.filter((id) => !existingIds.includes(id));
+            if (unknown.length > 0) {
+              throw new MCPError(
+                ErrorCode.VALIDATION_ERROR,
+                `Bucket(s) ${unknown.join(', ')} are not in view ${viewId} (it has ${existingIds.join(', ')}). Nothing was changed.`,
+              );
+            }
+            const missing = existingIds.filter((id) => !order.includes(id));
+            if (missing.length > 0) {
+              throw new MCPError(
+                ErrorCode.VALIDATION_ERROR,
+                `bucketIds must list every column in the view; ${missing.join(', ')} ` +
+                  `${missing.length === 1 ? 'is' : 'are'} missing. Pass the complete order (list-buckets shows it). Nothing was changed.`,
+              );
+            }
+
+            const byId = new Map(existing.map((b) => [b.id, b]));
+            const plan = order.map((id, i) => ({
+              bucket: byId.get(id) as TaskBucket,
+              position: (i + 1) * POSITION_STEP,
+              from: existingIds.indexOf(id) + 1,
+              to: i + 1,
+            }));
+
+            if (args.dryRun) {
+              return text(
+                `## Dry run — reorder columns in project ${projectId} (view ${viewId})\n\n` +
+                  plan
+                    .map((p) => `- "${p.bucket.title ?? ''}" (${p.bucket.id}): #${p.from} → #${p.to}`)
+                    .join('\n') + '\n',
+              );
+            }
+
+            const written: number[] = [];
+            try {
+              for (const p of plan) {
+                if (p.bucket.position === p.position) {
+                  continue; // already there — one fewer write to fail
+                }
+                await updateBucket(
+                  service,
+                  projectId,
+                  viewId,
+                  p.bucket.id,
+                  bucketInput({ title: p.bucket.title, position: p.position, limit: p.bucket.limit }),
+                );
+                written.push(p.bucket.id);
+              }
+            } catch (error) {
+              const actual = await orderedBuckets(service, projectId, viewId);
+              throw new MCPError(
+                ErrorCode.INTERNAL_ERROR,
+                `Reorder failed partway: ${error instanceof Error ? error.message : String(error)}. ` +
+                  `${written.length} of ${plan.length} column(s) were repositioned. ` +
+                  `The board is now ordered: ${actual.map((b) => `${b.title ?? ''} (${b.id})`).join(' | ')}`,
+              );
+            }
+
+            const verified = await orderedBuckets(service, projectId, viewId);
+            return text(
+              `## Reordered columns — project ${projectId}, view ${viewId}\n\n` +
+                verified.map((b, i) => `${i + 1}. ${b.title ?? ''} (${b.id})`).join('\n') +
+                `\n\n_${written.length} column(s) repositioned, order read back from the board._\n`,
+            );
           }
 
           case 'delete-bucket': {
@@ -415,8 +580,9 @@ export function registerKanbanTool(
           case 'set-task-position': {
             // Orders a task WITHIN its column. Position is a float and is stored per
             // view — lower sorts higher. To drop a task between two neighbours, read
-            // their positions (list-buckets returns tasks in order) and pass the
-            // midpoint. Vikunja recalculates the whole view if positions get too close.
+            // their positions (list-buckets with includeTasks lists a column's cards
+            // in board order) and pass the midpoint. Vikunja recalculates the whole
+            // view if positions get too close.
             if (args.taskId === undefined || args.position === undefined) {
               throw new MCPError(
                 ErrorCode.VALIDATION_ERROR,
