@@ -24,18 +24,20 @@ export function registerTaskCommentsTool(
 ): void {
   server.tool(
     'vikunja_task_comments',
-    'Manage task comments: list a task\'s comments (operation "list"), add one (operation "comment"), or edit one (operation "update", needs commentId)',
+    'Manage task comments: list a task\'s comments (operation "list"), add one (operation "comment", also accepted as "create"), or edit one (operation "update", needs commentId). The task is addressed as `id`, and `taskId` is accepted as an alias.',
     {
-      operation: z.enum(['comment', 'list', 'update']),
-      // Task and comment identification
-      id: z.number(),
+      // `create` is an alias for `comment` — it is what a caller reaches for
+      // first, by analogy with every other tool here.
+      operation: z.enum(['comment', 'create', 'list', 'update']),
+      // Task and comment identification. `id` is the task; `taskId` is an alias
+      // for it, so neither is required on its own.
+      id: z.number().optional(),
+      taskId: z.number().optional(),
       comment: z.string().optional(),
       commentId: z.number().optional(),
     },
     async (args) => {
       try {
-        logger.debug('Executing task comments tool', { operation: args.operation, taskId: args.id });
-
         // Check authentication
         if (!authManager.isAuthenticated()) {
           throw createAuthRequiredError('access task comment operations');
@@ -49,15 +51,31 @@ export function registerTaskCommentsTool(
         // Test client connection
         await getClientFromContext();
 
+        // `taskId` is an alias for `id`: every comment service downstream reads `id`.
+        if (args.id === undefined && args.taskId !== undefined) {
+          args.id = args.taskId;
+        }
+
+        logger.debug('Executing task comments tool', { operation: args.operation, taskId: args.id });
+
+        // The services take only these; build the object explicitly so an
+        // absent id stays absent (exactOptionalPropertyTypes).
+        const commentArgs = {
+          ...(args.id !== undefined && { id: args.id }),
+          ...(args.comment !== undefined && { comment: args.comment }),
+          ...(args.commentId !== undefined && { commentId: args.commentId }),
+        };
+
         switch (args.operation) {
           case 'comment':
-            return handleComment(args);
+          case 'create':
+            return handleComment(commentArgs);
 
           case 'list':
-            return listComments(args);
+            return listComments(commentArgs);
 
           case 'update':
-            return handleUpdateComment(args);
+            return handleUpdateComment(commentArgs);
 
           default:
             throw new MCPError(

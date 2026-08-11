@@ -53,6 +53,13 @@ import {
   type AuthShareArgs
 } from './sharing';
 
+/** Everything `vikunja_projects` can do; shared by `operation` and its `subcommand` alias. */
+const PROJECT_OPERATIONS = [
+  'list', 'get', 'create', 'update', 'delete', 'archive', 'unarchive',
+  'get-children', 'get-tree', 'get-breadcrumb', 'move',
+  'create-share', 'list-shares', 'get-share', 'delete-share', 'auth-share',
+] as const;
+
 /**
  * Legacy single-tool interface for backward compatibility
  * Registers a single tool with all subcommands like the original implementation
@@ -64,12 +71,14 @@ export function registerProjectsTool(
 ): void {
   server.tool(
     'vikunja_projects',
-    'Manage projects with full CRUD operations, hierarchy management, and sharing capabilities',
+    'Manage projects with full CRUD operations, hierarchy management, and sharing capabilities. Takes `operation` (the name every other vikunja tool uses); `subcommand` is accepted as an alias.',
     {
-      subcommand: z.enum(['list', 'get', 'create', 'update', 'delete', 'archive', 'unarchive',
-        'get-children', 'get-tree', 'get-breadcrumb', 'move',
-        'create-share', 'list-shares', 'get-share', 'delete-share', 'auth-share'
-      ]),
+      // `operation` is the preferred name — it is what every other vikunja tool
+      // takes. `subcommand` is what this one shipped with and still works. Zod
+      // can't mark either one required, so the "neither given" error is raised
+      // in the handler.
+      operation: z.enum(PROJECT_OPERATIONS).optional(),
+      subcommand: z.enum(PROJECT_OPERATIONS).optional(),
       // CRUD arguments. Identifier fields use z.coerce so a client that sends a
       // numeric id as a string (some MCP clients do) is accepted instead of
       // rejected with "expected number, received string". null still passes
@@ -77,7 +86,9 @@ export function registerProjectsTool(
       id: z.coerce.number().positive().optional(),
       title: z.string().optional(),
       description: z.string().optional(),
-      parentProjectId: z.coerce.number().positive().nullable().optional(),
+      // 0 is Vikunja's stored value for "top level", so it must be accepted here
+      // rather than rejected as "not a positive integer".
+      parentProjectId: z.coerce.number().int().min(0).nullable().optional(),
       isArchived: z.boolean().optional(),
       hexColor: z
         .string()
@@ -125,9 +136,25 @@ export function registerProjectsTool(
         args.projectId = args.id;
       }
 
+      // Same idea for the verb: `operation` matches every other vikunja tool,
+      // `subcommand` is what this one shipped with. Either works.
+      if (args.operation !== undefined && args.subcommand !== undefined && args.operation !== args.subcommand) {
+        throw new MCPError(
+          ErrorCode.VALIDATION_ERROR,
+          'operation and subcommand must match when both are provided',
+        );
+      }
+      const operation = args.operation ?? args.subcommand;
+      if (operation === undefined) {
+        throw new MCPError(
+          ErrorCode.VALIDATION_ERROR,
+          'operation is required (e.g. "list", "get", "update"); `subcommand` is accepted as an alias',
+        );
+      }
+
       try {
         const result = await (async (): Promise<McpResponse> => {
-          switch (args.subcommand) {
+          switch (operation) {
             // CRUD operations
             case 'list':
               return await listProjects(args as ListProjectsArgs);
@@ -239,13 +266,13 @@ export function registerProjectsTool(
           }
 
           default:
-            throw new MCPError(ErrorCode.VALIDATION_ERROR, `Unknown subcommand: ${String(args.subcommand)}`);
+            throw new MCPError(ErrorCode.VALIDATION_ERROR, `Unknown subcommand: ${String(operation)}`);
         }
         })();
 
         return result;
       } catch (error) {
-        throw wrapToolError(error, 'vikunja_projects', args.subcommand, args.id);
+        throw wrapToolError(error, 'vikunja_projects', operation, args.id);
       }
     }
   );

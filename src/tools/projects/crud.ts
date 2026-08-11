@@ -371,7 +371,7 @@ export async function updateProject(
 
     // Get all projects for hierarchy validation
     let allProjects: Project[] = [];
-    if (parentProjectId !== undefined || (currentProject && currentProject.parent_project_id)) {
+    if (parentProjectId !== undefined && parentProjectId !== null && parentProjectId !== 0) {
       try {
         const allProjectsResponse = await client.projects.getProjects({ per_page: 1000 });
         const allProjectsApiData = allProjectsResponse as ApiProjectResponse;
@@ -392,15 +392,13 @@ export async function updateProject(
       validationUpdateData.hexColor = hexColor;
     }
 
-    const resolvedParentProjectId = parentProjectId === null
-      ? undefined
-      : parentProjectId ?? (
-        currentProject && typeof currentProject.parent_project_id === 'number'
-          ? currentProject.parent_project_id
-          : undefined
-      );
-    if (resolvedParentProjectId !== undefined) {
-      validationUpdateData.parentProjectId = resolvedParentProjectId;
+    // Only a parent the CALLER asked for gets the exists/depth checks. Vikunja
+    // stores "top level" as parent_project_id 0, so re-validating the project's
+    // own stored parent made every top-level update fail with "parentProjectId
+    // must be a positive integer" — naming an argument the caller never sent.
+    // null and 0 both mean "no parent": nothing to look up, nothing to validate.
+    if (parentProjectId !== undefined && parentProjectId !== null && parentProjectId !== 0) {
+      validationUpdateData.parentProjectId = parentProjectId;
     }
 
     validateProjectData(validationUpdateData, allProjects);

@@ -24,9 +24,20 @@ export function registerTaskLabelsTool(
 ): void {
   server.tool(
     'vikunja_task_labels',
-    'Manage task labels: apply, remove, list labels; bulk-apply/remove across many tasks',
+    'Manage task labels: apply, remove, list labels; bulk-apply/remove across many tasks. The short verbs `apply`/`remove`/`list` are accepted alongside the hyphenated names.',
     {
-      operation: z.enum(['apply-label', 'remove-label', 'list-labels', 'bulk-apply-label', 'bulk-remove-label']),
+      // Short verbs are aliases for the hyphenated names — `list` is what a
+      // caller tries first, and the error message was the only teacher.
+      operation: z.enum([
+        'apply-label',
+        'apply',
+        'remove-label',
+        'remove',
+        'list-labels',
+        'list',
+        'bulk-apply-label',
+        'bulk-remove-label',
+      ]),
       // Task and label identification. `id` targets a single task; `taskIds` targets many
       // for the bulk operations.
       id: z.number().optional(),
@@ -52,18 +63,21 @@ export function registerTaskLabelsTool(
 
         switch (args.operation) {
           case 'apply-label':
+          case 'apply':
             return applyLabels({
               id: args.id,
               labels: args.labels || []
             });
 
           case 'remove-label':
+          case 'remove':
             return removeLabels({
               id: args.id,
               labels: args.labels || []
             });
 
           case 'list-labels':
+          case 'list':
             return listTaskLabels(args);
 
           case 'bulk-apply-label':

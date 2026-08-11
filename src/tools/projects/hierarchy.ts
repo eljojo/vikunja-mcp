@@ -57,7 +57,8 @@ export interface GetBreadcrumbArgs {
  */
 export interface MoveProjectArgs {
   id: number;
-  parentProjectId?: number;
+  /** `null` and `0` both mean "move to root"; omitting it leaves the parent alone. */
+  parentProjectId?: number | null;
   verbosity?: string;
   useOptimizedFormat?: boolean;
   useAorp?: boolean;
@@ -301,10 +302,12 @@ export async function moveProject(
     const allProjects = await client.projects.getProjects({ per_page: 1000 });
 
     // Validate move constraints
-    validateMoveConstraints(id, parentProjectId, allProjects);
+    validateMoveConstraints(id, parentProjectId ?? undefined, allProjects);
 
-    // Validate parent project ID if provided
-    if (parentProjectId !== undefined) {
+    // Validate parent project ID if provided. `null` and `0` are both "no
+    // parent" — 0 is what Vikunja stores for a top-level project — so either
+    // one is a move to root, not an invalid id. `update` reads them the same way.
+    if (parentProjectId !== undefined && parentProjectId !== null && parentProjectId !== 0) {
       validateId(parentProjectId, 'parentProjectId');
     }
 
@@ -319,7 +322,8 @@ export async function moveProject(
     // Perform the move
     const updateData: { parent_project_id?: number } = {};
     if (parentProjectId !== undefined) {
-      updateData.parent_project_id = parentProjectId;
+      // Vikunja stores "top level" as 0, not null.
+      updateData.parent_project_id = parentProjectId ?? 0;
     }
     const updatedProject = await client.projects.updateProject(id, updateData as Project);
 
