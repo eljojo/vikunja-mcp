@@ -80,12 +80,19 @@ export function formatResponseForMcp(response: SimpleResponse): string {
 export function createTaskResponse(
   operation: string,
   message: string,
-  data: { tasks?: ResponseData[] } | ResponseData,
+  data: { tasks?: ResponseData[]; taskTableOptions?: unknown } | ResponseData,
   metadata?: ResponseMetadata,
   sessionId?: string
 ): SimpleResponse {
-  // Handle both task data structure and arbitrary data objects
-  const responseData = data && typeof data === 'object' && 'tasks' in data ? data.tasks : data;
+  // Handle both task data structure and arbitrary data objects. Rendering hints
+  // ride alongside the tasks and must survive the unwrap, or a single-task read
+  // renders with the list's (deliberately lean) column set.
+  const responseData =
+    data && typeof data === 'object' && 'tasks' in data
+      ? 'taskTableOptions' in data
+        ? { tasks: data.tasks, taskTableOptions: data.taskTableOptions }
+        : data.tasks
+      : data;
 
   // Respect success flag from metadata, default to true
   const successFlag = metadata?.success !== undefined ? metadata.success : true;

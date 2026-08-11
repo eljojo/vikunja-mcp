@@ -133,6 +133,9 @@ export function createTaskResponse(
       tasks: Array.isArray(taskData)
         ? taskData as ResponseData[]
         : [taskData as ResponseData],
+      // One card, deliberately asked for: show its description. Lists leave the
+      // Notes column off, since bodies are what makes a board read expensive.
+      ...(isSingleTaskOperation(operation) && { taskTableOptions: { showNotes: true } }),
     };
     const taskResult = createTaskAorpResponse(operation, message, formattedTaskData, _metadata);
 

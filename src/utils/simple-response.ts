@@ -5,6 +5,7 @@
 
 import type { ResponseMetadata } from '../types/responses';
 import type { Task, Project, Label, User } from '../types/vikunja';
+import { htmlToPlainText } from './html-text';
 
 /**
  * Common data structures that can be passed to response formatters
@@ -75,6 +76,59 @@ interface PaginationInfo {
   perPage: number;
   returned: number;
   hasMore: boolean;
+  /** Size of the whole narrowed set, when the read saw all of it. */
+  total?: number;
+}
+
+/**
+ * Columns a task table can carry. A caller names these in `fields` to pin the
+ * projection; without `fields` the table shows whichever are populated.
+ */
+const TASK_COLUMN_KEYS = [
+  'id',
+  'done',
+  'title',
+  'column',
+  'due',
+  'priority',
+  'labels',
+  'updated',
+  'comments',
+  'notes',
+] as const;
+type TaskColumnKey = (typeof TASK_COLUMN_KEYS)[number];
+
+/** First-guess spellings for the column keys, so a projection doesn't need the docs. */
+const TASK_COLUMN_ALIASES: Record<string, TaskColumnKey> = {
+  task: 'title',
+  bucket: 'column',
+  bucket_id: 'column',
+  bucket_title: 'column',
+  due_date: 'due',
+  duedate: 'due',
+  pri: 'priority',
+  label: 'labels',
+  comment: 'comments',
+  comment_count: 'comments',
+  description: 'notes',
+};
+
+/** Resolve a caller's `fields` list to column keys; unknown names are ignored. */
+function resolveColumnKeys(fields: string[]): Set<TaskColumnKey> {
+  const keys = new Set<TaskColumnKey>();
+  for (const field of fields) {
+    const normalized = field.trim().toLowerCase();
+    const key =
+      (TASK_COLUMN_KEYS as readonly string[]).includes(normalized)
+        ? (normalized as TaskColumnKey)
+        : TASK_COLUMN_ALIASES[normalized];
+    if (key) {
+      keys.add(key);
+    }
+  }
+  // A row without its id can't be acted on, so the id is never projected away.
+  keys.add('id');
+  return keys;
 }
 
 /**
@@ -83,6 +137,14 @@ interface PaginationInfo {
 interface TaskTableOptions {
   /** Force-show (true) or hide (false) the done column; default: show when mixed */
   showDone?: boolean;
+  /**
+   * Include the Notes column (the description, HTML-stripped). Off by default:
+   * descriptions are the bulk of a list's payload, and a board read is a thing
+   * you do constantly. A single-task read turns it back on.
+   */
+  showNotes?: boolean;
+  /** Render exactly these columns (see TASK_COLUMN_KEYS) instead of the populated ones. */
+  fields?: string[];
 }
 
 /**
@@ -320,42 +382,6 @@ function formatTaskItem(task: Task, index: number, opts: { showProject?: boolean
 }
 
 /**
- * Convert Vikunja's HTML rich text to compact plain text.
- * Unwraps anchors (keeping the URL, and link text only when it differs),
- * turns block/list markup into newlines/bullets, strips remaining tags,
- * decodes common entities, and drops zero-width artifacts.
- */
-function htmlToPlainText(html: string): string {
-  const entities: Record<string, string> = {
-    '&amp;': '&',
-    '&lt;': '<',
-    '&gt;': '>',
-    '&quot;': '"',
-    '&#39;': "'",
-    '&nbsp;': ' ',
-  };
-
-  return html
-    // Anchors → "text (url)", or just "url" when text is empty/equal
-    .replace(/<a\b[^>]*?href="([^"]*)"[^>]*>(.*?)<\/a>/gi, (_m, href: string, inner: string) => {
-      const label = inner.replace(/<[^>]+>/g, '').trim();
-      return !label || label === href ? href : `${label} (${href})`;
-    })
-    .replace(/<li[^>]*>/gi, '\n- ')
-    .replace(/<\/(p|div|h[1-6]|ul|ol|li|tr|blockquote)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&nbsp;/g, (m) => entities[m] ?? m)
-    .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    .replace(/[ \t]+/g, ' ')
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-}
-
-/**
  * Heuristic: does this item look like a Task (vs a project/label/plain item)?
  */
 function isTaskItem(item: unknown): item is Task {
@@ -400,16 +426,28 @@ function hasRealDueDate(task: Task): boolean {
  * kanban bucket; Notes holds the HTML-stripped description, newlines flattened.
  */
 function formatTaskTable(tasks: Task[], options?: TaskTableOptions): string {
-  const showDone = options?.showDone ?? (new Set(tasks.map((t) => Boolean(t.done))).size > 1);
-  const showColumn = tasks.some((t) => Boolean(t.bucket_title));
-  const showDue = tasks.some(hasRealDueDate);
-  const showPriority = tasks.some((t) => (t.priority ?? 0) > 0);
-  const showLabels = tasks.some((t) => Array.isArray(t.labels) && t.labels.length > 0);
-  const showUpdated = tasks.some((t) => Boolean(t.updated_relative));
-  const showNotes = tasks.some((t) => Boolean(t.description) && Boolean(htmlToPlainText(t.description as string)));
+  // With `fields`, the caller pins the projection exactly; without it, a column
+  // appears when at least one task populates it.
+  const pinned = options?.fields ? resolveColumnKeys(options.fields) : undefined;
+  const wanted = (key: TaskColumnKey, populated: boolean): boolean =>
+    pinned ? pinned.has(key) : populated;
+
+  const showDone = pinned
+    ? pinned.has('done')
+    : options?.showDone ?? new Set(tasks.map((t) => Boolean(t.done))).size > 1;
+  const showColumn = wanted('column', tasks.some((t) => Boolean(t.bucket_title)));
+  const showDue = wanted('due', tasks.some(hasRealDueDate));
+  const showPriority = wanted('priority', tasks.some((t) => (t.priority ?? 0) > 0));
+  const showLabels = wanted('labels', tasks.some((t) => Array.isArray(t.labels) && t.labels.length > 0));
+  const showUpdated = wanted('updated', tasks.some((t) => Boolean(t.updated_relative)));
+  // Descriptions dominate a list's payload, so Notes is opt-in (showNotes /
+  // fields) rather than "shown because it's populated".
+  const showNotes =
+    wanted('notes', options?.showNotes === true) &&
+    tasks.some((t) => Boolean(t.description) && Boolean(htmlToPlainText(t.description as string)));
   // 💬 count: only populated on single-project lists. A card carrying hidden
   // comment context must not look identical to an empty one.
-  const showComments = tasks.some((t) => (t.comment_count ?? 0) > 0);
+  const showComments = wanted('comments', tasks.some((t) => (t.comment_count ?? 0) > 0));
 
   const columns: string[] = ['ID'];
   if (showDone) columns.push('✓');
@@ -429,7 +467,7 @@ function formatTaskTable(tasks: Task[], options?: TaskTableOptions): string {
     if (showColumn) cells.push(escapeCell(task.bucket_title ?? ''));
     if (showDue) cells.push(hasRealDueDate(task) ? (task.due_date as string).slice(0, 10) : '');
     if (showPriority) cells.push((task.priority ?? 0) > 0 ? String(task.priority) : '');
-    if (showLabels) cells.push(task.labels?.map((l) => l.title).join(', ') ?? '');
+    if (showLabels) cells.push(escapeCell(task.labels?.map((l) => l.title).join(', ') ?? ''));
     if (showUpdated) cells.push(task.updated_relative ?? '');
     if (showComments) cells.push((task.comment_count ?? 0) > 0 ? String(task.comment_count) : '');
     if (showNotes) cells.push(task.description ? escapeCell(htmlToPlainText(task.description)) : '');
@@ -518,9 +556,23 @@ function formatCollection(
   }
 
   if (collection.length > MAX_RENDERED_ITEMS) {
+    // The render cap bites below the requested window, so name both numbers —
+    // otherwise a perPage above the cap looks like it was honoured.
+    const ofTotal = pagination?.total !== undefined ? ` (of ${pagination.total} matching)` : '';
     out +=
-      `_Showing first ${MAX_RENDERED_ITEMS} of ${collection.length}. ` +
-      `Narrow with a \`filter\` or request a specific \`page\`/\`perPage\`._\n\n`;
+      `_Showing first ${MAX_RENDERED_ITEMS} of ${collection.length}${ofTotal}. ` +
+      `Narrow with a \`filter\` or request a specific \`page\`/\`perPage\` (max ${MAX_RENDERED_ITEMS} rendered)._\n\n`;
+  } else if (pagination?.total !== undefined) {
+    // A full-set read knows the real total, so say it outright rather than
+    // hedging with "more results may exist" — and only offer a next page when
+    // there is one, since a caller will follow that instruction.
+    const pages = Math.max(1, Math.ceil(pagination.total / Math.max(1, pagination.perPage)));
+    const next = pagination.hasMore
+      ? ` Pass \`page:${pagination.page + 1}\` for the next.`
+      : ' This is the last page.';
+    out +=
+      `_Page ${pagination.page} of ${pages} — ${collection.length} of ${pagination.total} matching task(s), ` +
+      `${pagination.perPage}/page.${next}_\n\n`;
   } else if (pagination?.hasMore) {
     out +=
       `_Page ${pagination.page} (${pagination.perPage}/page). More results may exist — ` +
